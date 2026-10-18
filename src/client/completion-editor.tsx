@@ -1,6 +1,7 @@
 import React from 'react'
 import type { CompletionPolicy } from '../contract/types.ts'
 import type { Injected } from './view.tsx'
+import { OptionGroup } from './option-group.tsx'
 export function CompletionEditor({
   value,
   change,
@@ -14,26 +15,16 @@ export function CompletionEditor({
 }) {
   return (
     <div className="pd-policy">
-      <label className="pd-field">
-        {t('completionMode')}
-        <select
-          disabled={disabled}
-          aria-label={t('completionMode')}
-          value={value.mode}
-          onChange={(e) =>
-            change({
-              ...value,
-              mode: e.target.value as CompletionPolicy['mode'],
-            })
-          }
-        >
-          {(['manual', 'verified', 'reviewed'] as const).map((mode) => (
-            <option key={mode} value={mode}>
-              {t(mode)}
-            </option>
-          ))}
-        </select>
-      </label>
+      <OptionGroup
+        label={t('completionMode')}
+        disabled={disabled}
+        value={value.mode}
+        change={(mode) => change({ ...value, mode })}
+        options={(['manual', 'verified', 'reviewed'] as const).map((mode) => ({
+          value: mode,
+          text: t(mode),
+        }))}
+      />
       <p className="pd-muted">{t('completionHelp')}</p>
       <details className="pd-advanced">
         <summary>{t('advancedRules')}</summary>
@@ -87,27 +78,25 @@ export function CompletionEditor({
                     }
                   />
                 </label>
-                <label className="pd-field">
-                  {t('checkKind')}
-                  <select
-                    disabled={disabled}
-                    value={check.kind}
-                    onChange={(e) =>
-                      change({
-                        ...value,
-                        checks: value.checks.map((c, n) =>
-                          n === index
-                            ? { ...c, kind: e.target.value as typeof c.kind }
-                            : c,
-                        ),
-                      })
-                    }
-                  >
-                    <option value="text-equals">{t('textEquals')}</option>
-                    <option value="sha256">SHA256</option>
-                  </select>
-                </label>
-                <label className="pd-field">
+                <OptionGroup
+                  className="pd-rule-wide"
+                  label={t('checkKind')}
+                  disabled={disabled}
+                  value={check.kind}
+                  change={(kind) =>
+                    change({
+                      ...value,
+                      checks: value.checks.map((c, n) =>
+                        n === index ? { ...c, kind } : c,
+                      ),
+                    })
+                  }
+                  options={[
+                    { value: 'text-equals', text: t('textEquals') },
+                    { value: 'sha256', text: 'SHA256' },
+                  ]}
+                />
+                <label className="pd-field pd-rule-wide">
                   {t('expectedValue')}
                   <textarea
                     disabled={disabled}

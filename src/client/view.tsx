@@ -20,6 +20,7 @@ import type {
 import type { createDashboardStore } from './store.ts'
 import type { Key } from './locales.ts'
 import { CompletionEditor } from './completion-editor.tsx'
+import { OptionGroup } from './option-group.tsx'
 import { validSnapshot } from './validation.ts'
 import type {
   CompletionPolicy,
@@ -1382,23 +1383,19 @@ function CreateForm({
         })
       }}
     >
-      <label className="pd-field">
-        {t('all')}
-        <select
-          value={ws}
-          onChange={(e) => {
-            setWs(e.target.value)
-            setAssignee('')
-          }}
-        >
-          {workspaces.map((w) => (
-            <option key={w.workspaceId} value={w.workspaceId}>
-              {w.title}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="pd-field">
+      <OptionGroup
+        label={t('all')}
+        value={ws}
+        change={(id) => {
+          setWs(id)
+          setAssignee('')
+        }}
+        options={workspaces.map((w) => ({
+          value: w.workspaceId,
+          text: w.title,
+        }))}
+      />
+      <label className="pd-field pd-span">
         {t('title')}
         <input
           required
@@ -1408,7 +1405,7 @@ function CreateForm({
           onChange={(e) => setTitle(e.target.value)}
         />
       </label>
-      <label className="pd-field">
+      <label className="pd-field pd-span">
         {t('description')}
         <textarea
           value={description}
@@ -1416,7 +1413,7 @@ function CreateForm({
           onChange={(e) => setDescription(e.target.value)}
         />
       </label>
-      <label className="pd-field">
+      <label className="pd-field pd-span">
         {t('criteria')}
         <textarea
           required={!intake}
@@ -1424,36 +1421,30 @@ function CreateForm({
           onChange={(e) => setCriteria(e.target.value)}
         />
       </label>
-      <label className="pd-field">
-        {t('priority')}
-        <select
-          value={priority}
-          onChange={(e) => setPriority(Number(e.target.value))}
-        >
-          {(['low', 'normal', 'high'] as const).map((p, i) => (
-            <option value={i} key={p}>
-              {t(p)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="pd-field">
-        {t('assignee')}
-        <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-          <option value="">{t('queue')}</option>
-          {sessions
+      <OptionGroup
+        label={t('priority')}
+        value={priority}
+        change={setPriority}
+        options={(['low', 'normal', 'high'] as const).map((p, i) => ({
+          value: i,
+          text: t(p),
+        }))}
+      />
+      <OptionGroup
+        label={t('assignee')}
+        value={assignee}
+        change={setAssignee}
+        options={[
+          { value: '', text: t('queue') },
+          ...sessions
             .filter((s) =>
               workspaces
                 .find((w) => w.workspaceId === ws)
                 ?.sessionIds.includes(s.id),
             )
-            .map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.displayTitle}
-              </option>
-            ))}
-        </select>
-      </label>
+            .map((s) => ({ value: s.id, text: s.displayTitle })),
+        ]}
+      />
       <label className="pd-check">
         <input
           type="checkbox"
