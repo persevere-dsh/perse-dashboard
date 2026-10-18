@@ -295,7 +295,7 @@
     },
     {
       "id": "ui-journeys",
-      "description": "Modal navigation, nested draft protection, stale edits, focus, responsive geometry and theme",
+      "description": "Modal navigation, nested draft protection, stale edits, focus, chip radio group selection into durable tasks, responsive geometry and theme",
       "seed": "dense"
     }
   ]

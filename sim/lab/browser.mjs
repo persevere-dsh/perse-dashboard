@@ -79,6 +79,11 @@ async function create(
   title,
   { mode = 'reviewed', manual = false, intake = true, checks = false } = {},
 ) {
+  const modeLabels = {
+    manual: 'Owner acceptance',
+    verified: 'Automatic after machine checks',
+    reviewed: 'Automatic after independent review',
+  }
   await closeDetail()
   await page
     .getByRole('combobox', { name: 'All workspaces', exact: true })
@@ -98,7 +103,11 @@ async function create(
   await f
     .getByLabel('Needs manual validation', { exact: true })
     .setChecked(manual)
-  await f.getByLabel('Completion policy', { exact: true }).selectOption(mode)
+  const policy = f
+    .getByRole('radiogroup', { name: 'Completion policy', exact: true })
+    .getByRole('radio', { name: modeLabels[mode], exact: true })
+  await policy.check()
+  await expect(policy).toBeChecked()
   if (checks) {
     await f.getByText('Advanced completion rules', { exact: true }).click()
     await f
@@ -664,6 +673,119 @@ try {
       await page
         .getByLabel('All workspaces', { exact: true })
         .selectOption('alpha')
+      await page.getByRole('button', { name: 'New task', exact: true }).click()
+      const chipForm = page.locator('form.pd-create')
+      await chipForm
+        .getByLabel('Title', { exact: true })
+        .fill('Chip selection controls')
+      await chipForm
+        .getByLabel('Description', { exact: true })
+        .fill('Every chip group selection must reach the durable task payload')
+      await chipForm
+        .getByLabel('Acceptance criteria (one per line)', { exact: true })
+        .fill('Chip selections persist')
+      const workspaceChips = chipForm.getByRole('radiogroup', {
+        name: 'All workspaces',
+        exact: true,
+      })
+      const assigneeChips = chipForm.getByRole('radiogroup', {
+        name: 'Assigned session',
+        exact: true,
+      })
+      await expect(
+        workspaceChips.getByRole('radio', {
+          name: 'Application',
+          exact: true,
+        }),
+      ).toBeChecked()
+      await expect(
+        assigneeChips.getByRole('radio', {
+          name: 'Workspace queue',
+          exact: true,
+        }),
+      ).toBeChecked()
+      await workspaceChips
+        .getByRole('radio', { name: 'Operations', exact: true })
+        .check()
+      await expect(
+        assigneeChips.getByRole('radio', {
+          name: 'session-alpha-reviewer',
+          exact: true,
+        }),
+      ).toHaveCount(0)
+      await workspaceChips
+        .getByRole('radio', { name: 'Application', exact: true })
+        .check()
+      await assigneeChips
+        .getByRole('radio', { name: 'session-alpha-reviewer', exact: true })
+        .check()
+      await chipForm
+        .getByRole('radiogroup', { name: 'Priority', exact: true })
+        .getByRole('radio', { name: 'High', exact: true })
+        .check()
+      await chipForm
+        .getByRole('radiogroup', { name: 'Completion policy', exact: true })
+        .getByRole('radio', {
+          name: 'Automatic after machine checks',
+          exact: true,
+        })
+        .check()
+      await chipForm
+        .getByText('Advanced completion rules', { exact: true })
+        .click()
+      await chipForm
+        .getByRole('button', { name: 'Add machine check', exact: true })
+        .click()
+      await chipForm
+        .getByRole('radiogroup', { name: 'Check kind', exact: true })
+        .getByRole('radio', { name: 'SHA256', exact: true })
+        .check()
+      await chipForm
+        .getByLabel('Workspace file path', { exact: true })
+        .fill('chip.txt')
+      await chipForm
+        .getByLabel('Expected content or hash', { exact: true })
+        .fill('chip-result')
+      await noPageOverflow()
+      await chipForm
+        .getByRole('radiogroup', { name: 'All workspaces', exact: true })
+        .scrollIntoViewIfNeeded()
+      await page.screenshot({
+        path: path.join(run, 'ui-create-chips-light.png'),
+      })
+      await chipForm
+        .getByRole('radiogroup', { name: 'Check kind', exact: true })
+        .scrollIntoViewIfNeeded()
+      await page.screenshot({
+        path: path.join(run, 'ui-create-chips-policy-light.png'),
+      })
+      await chipForm
+        .getByRole('button', { name: 'Create task', exact: true })
+        .click()
+      await expect(
+        page.locator('.pd-card').filter({ hasText: 'Chip selection controls' }),
+      ).toBeVisible()
+      const chipTask = (await data()).snapshot.tasks.find(
+        (t) => t.title === 'Chip selection controls',
+      )
+      expect(chipTask.workspaceId).toBe('alpha')
+      expect(chipTask.priority).toBe(2)
+      expect(chipTask.assignee).toBe('session-alpha-reviewer')
+      expect(chipTask.completionPolicy.mode).toBe('verified')
+      expect(chipTask.completionPolicy.checks).toEqual([
+        {
+          criterion: 0,
+          path: 'chip.txt',
+          kind: 'sha256',
+          expected: 'chip-result',
+        },
+      ])
+      results
+        .at(-1)
+        .assertions.push(
+          'Chip radio groups select workspace, priority, assignee, completion policy and check kind into the durable task',
+        )
+      await closeDetail()
       await page.getByLabel('Issue budget', { exact: true }).fill('')
       await expect(
         page.getByRole('button', { name: 'Start queue', exact: true }),
@@ -677,6 +799,22 @@ try {
       )
       await expect(cards.first()).toHaveCSS('color', 'rgb(233, 236, 240)')
       await page.screenshot({ path: path.join(run, 'ui-desktop-dark.png') })
+      await page.getByRole('button', { name: 'New task', exact: true }).click()
+      await page.screenshot({
+        path: path.join(run, 'ui-create-chips-dark.png'),
+      })
+      await page
+        .locator('form.pd-create')
+        .getByRole('radiogroup', { name: 'Completion policy', exact: true })
+        .scrollIntoViewIfNeeded()
+      await page.screenshot({
+        path: path.join(run, 'ui-create-chips-policy-dark.png'),
+      })
+      await page
+        .locator('form.pd-create')
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .click()
+      await expect(page.locator('form.pd-create')).toHaveCount(0)
       await cards.filter({ hasText: 'Changed remotely' }).click()
       await page
         .getByRole('tab', { name: 'Analysis & review', exact: true })
@@ -697,6 +835,24 @@ try {
       await noPageOverflow()
       await page.screenshot({ path: path.join(run, 'ui-narrow-dialog.png') })
       await closeDetail()
+      await page.getByLabel('Theme', { exact: true }).selectOption('light')
+      await page.getByRole('button', { name: 'New task', exact: true }).click()
+      await noPageOverflow()
+      await page.screenshot({
+        path: path.join(run, 'ui-create-chips-narrow.png'),
+      })
+      await page
+        .locator('form.pd-create')
+        .getByRole('radiogroup', { name: 'Assigned session', exact: true })
+        .scrollIntoViewIfNeeded()
+      await page.screenshot({
+        path: path.join(run, 'ui-create-chips-assignee-narrow.png'),
+      })
+      await page
+        .locator('form.pd-create')
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .click()
+      await expect(page.locator('form.pd-create')).toHaveCount(0)
       await page.setViewportSize({ width: 1500, height: 1000 })
       await page.getByLabel('Theme', { exact: true }).selectOption('light')
       await api('/command/dispatch', {
