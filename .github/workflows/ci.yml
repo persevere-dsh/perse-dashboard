@@ -22,6 +22,10 @@ jobs:
         if: always()
         with:
           name: lab-evidence
-          path: .build/sim/**
+          path: |
+            .build/sim/*/summary.json
+            .build/sim/*/coverage.json
+            .build/sim/*/*.png
+            .build/sim/*/*.log
           retention-days: 7
       - run: npm pack --dry-run
