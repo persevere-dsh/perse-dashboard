@@ -1,0 +1,196 @@
+{
+  "version": "1.0.0",
+  "repository": "https://github.com/persevere-dsh/perse-dashboard",
+  "domainTests": 12,
+  "processOwnershipTests": 4,
+  "runtime": "DSH 0.2.1-rc.2 / Cordis 4.0.5 / Node 24",
+  "lanes": {
+    "native": {
+      "runId": "20261018-163816-1b4c46",
+      "sourceCommit": "457f2c23bef0f8bfdec32bc18d3c3f11a74097f2",
+      "sourceDirty": false,
+      "runtimeVersion": "0.2.1-rc.2",
+      "status": "passed",
+      "packageSha256": "9b7fa699a323f4b0e640a38a933cc5bf533d162f6011b22e1e79cca2b0c20eb1",
+      "artifactBinding": {
+        "installedPackage": true,
+        "sha256": "0e5316d2ac8d38d5660674342a18410749f6d89a72463ecca6fc264993cd06ec"
+      },
+      "assertions": [
+        {
+          "check": "DSH resolves the installed tarball artifact outside the checkout",
+          "passed": true
+        },
+        {
+          "check": "native slot loads without DOM injection",
+          "passed": true
+        },
+        {
+          "check": "task creation is durable and never executes a model",
+          "passed": true
+        },
+        {
+          "check": "handoff opens an unsent native DSH draft",
+          "passed": true
+        },
+        {
+          "check": "native queue atomically claims and reports evidence without auto-accepting",
+          "passed": true
+        },
+        {
+          "check": "deterministic provider invokes the real workspace shell tool",
+          "passed": true
+        },
+        {
+          "check": "only explicit human acceptance completes the task",
+          "passed": true
+        },
+        {
+          "check": "agent autonomously claims through the real DSH tool then reports",
+          "passed": true
+        },
+        {
+          "check": "second client receives the authoritative task baseline",
+          "passed": true
+        },
+        {
+          "check": "task changes stream to another client",
+          "passed": true
+        },
+        {
+          "check": "archive has a visible restore path",
+          "passed": true
+        },
+        {
+          "check": "stale writes fail without changing durable state",
+          "passed": true
+        },
+        {
+          "check": "reload rebuilds state from the Host",
+          "passed": true
+        },
+        {
+          "check": "linked task opens the real native conversation",
+          "passed": true
+        },
+        {
+          "check": "no browser runtime errors",
+          "passed": true
+        }
+      ],
+      "cleanup": true,
+      "ownedProcessGroupAbsent": true,
+      "transientCredentialsRemoved": true
+    },
+    "live": {
+      "runId": "20261018-163905-a2edbe",
+      "sourceCommit": "457f2c23bef0f8bfdec32bc18d3c3f11a74097f2",
+      "sourceDirty": false,
+      "runtimeVersion": "0.2.1-rc.2",
+      "status": "passed",
+      "packageSha256": "9b7fa699a323f4b0e640a38a933cc5bf533d162f6011b22e1e79cca2b0c20eb1",
+      "artifactBinding": {
+        "installedPackage": true,
+        "sha256": "0e5316d2ac8d38d5660674342a18410749f6d89a72463ecca6fc264993cd06ec"
+      },
+      "assertions": [
+        {
+          "check": "DSH resolves the installed tarball artifact outside the checkout",
+          "passed": true
+        },
+        {
+          "check": "native slot loads without DOM injection",
+          "passed": true
+        },
+        {
+          "check": "task creation is durable and never executes a model",
+          "passed": true
+        },
+        {
+          "check": "handoff opens an unsent native DSH draft",
+          "passed": true
+        },
+        {
+          "check": "native queue atomically claims and reports evidence without auto-accepting",
+          "passed": true
+        },
+        {
+          "check": "real model wrote and read the exact isolated artifact",
+          "passed": true
+        },
+        {
+          "check": "only explicit human acceptance completes the task",
+          "passed": true
+        },
+        {
+          "check": "second client receives the authoritative task baseline",
+          "passed": true
+        },
+        {
+          "check": "task changes stream to another client",
+          "passed": true
+        },
+        {
+          "check": "archive has a visible restore path",
+          "passed": true
+        },
+        {
+          "check": "stale writes fail without changing durable state",
+          "passed": true
+        },
+        {
+          "check": "reload rebuilds state from the Host",
+          "passed": true
+        },
+        {
+          "check": "linked task opens the real native conversation",
+          "passed": true
+        },
+        {
+          "check": "no browser runtime errors",
+          "passed": true
+        }
+      ],
+      "cleanup": true,
+      "ownedProcessGroupAbsent": true,
+      "transientCredentialsRemoved": true
+    }
+  },
+  "manualBrowser": {
+    "surface": "Codex in-app browser",
+    "sourceRun": "20261018-163816-1b4c46",
+    "actions": [
+      "Open native sidebar dashboard",
+      "Inspect actual agent claim/report evidence",
+      "Check criterion",
+      "Explicitly accept and observe Done"
+    ],
+    "passed": true
+  },
+  "limitations": [
+    "One DSH Host per installation",
+    "Queue is opt-in, single-worker, at most 10 tasks per enable",
+    "Remote SSH deployment has not been exercised",
+    "Preview runtime compatibility pinned to 0.2.1-rc.2"
+  ],
+  "liveArtifact": {
+    "filename": "sim-result.txt",
+    "bytes": 21,
+    "sha256": "63fb4e5348f53f444d780cae8701ed4db98aef8b4eccf079818c683f9ba79600",
+    "exactContent": "DSH_DASHBOARD_LIVE_OK",
+    "provider": "deepseek-official",
+    "model": "deepseek-flash"
+  },
+  "ci": {
+    "sourceCommit": "457f2c23bef0f8bfdec32bc18d3c3f11a74097f2",
+    "conclusion": "success",
+    "url": "https://github.com/persevere-dsh/perse-dashboard/actions/runs/39112228723"
+  },
+  "cleanClone": {
+    "npmCi": true,
+    "typecheck": true,
+    "buildAndPackageGate": true,
+    "domainTests": 12,
+    "processOwnershipTests": 4
+  }
+}
