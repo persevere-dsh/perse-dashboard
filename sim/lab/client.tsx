@@ -112,7 +112,14 @@ function App() {
       }),
     useWorkspaces: (select: any) => select({ items: workspaces }),
     useSessionStatus: (select: any) =>
-      select(new Map(sessions.map((s: any) => [s.id, { running: s.running }]))),
+      select(
+        new Map(
+          sessions.map((s: any) => [
+            s.id,
+            { running: s.running, pendingInteraction: s.pendingInteraction },
+          ]),
+        ),
+      ),
     useStore: (select: any) => select(local),
     actions: Object.fromEntries(
       Object.keys(local).map((key) => [

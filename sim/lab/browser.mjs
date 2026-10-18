@@ -279,6 +279,8 @@ try {
         .click()
       await page.getByRole('button', { name: 'Sessions', exact: true }).click()
       await expect(page.locator('tbody tr')).toHaveCount(6)
+      await expect(page.locator('tbody')).toContainText('Running')
+      await expect(page.locator('tbody')).toContainText('Needs input')
       await page
         .getByRole('button', { name: 'Task board', exact: true })
         .click()
@@ -505,6 +507,13 @@ try {
           'Partial, refused, high-risk, failed, risky and absent reviewer plus wrong file cannot reach done',
         )
     } else if (id === 'recovery') {
+      const completed = await create('Sessions survive recovery')
+      await queue(completed.id, 'done')
+      const phaseIds = [
+        (await task(completed.id)).analysisSessionId,
+        (await task(completed.id)).sessionId,
+        (await task(completed.id)).reviewSessionId,
+      ]
       const t = await create('Durable recovery', {
         mode: 'manual',
         intake: false,
@@ -523,6 +532,8 @@ try {
         .toBe('in-progress')
       expect((await data()).snapshot.dispatch.enabled).toBe(false)
       expect((await task(t.id)).version).toBe(2)
+      const ids = new Set((await data()).sessions.map((s) => s.id))
+      expect(phaseIds.every((id) => ids.has(id))).toBe(true)
       results
         .at(-1)
         .assertions.push(

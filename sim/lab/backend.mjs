@@ -6,7 +6,7 @@ import {
 } from '../../lib/types/host/board.js'
 import { Dispatcher } from '../../lib/types/host/dispatch.js'
 import { CompletionCoordinator } from '../../lib/types/host/completion.js'
-import { mkdir, writeFile, readFile } from 'node:fs/promises'
+import { mkdir, writeFile, readFile, rename } from 'node:fs/promises'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
 export async function makeBackend(
@@ -46,6 +46,57 @@ export async function makeBackend(
   for (const ws of workspaces)
     for (const role of ['builder', 'reviewer', 'analyst'])
       addSession(ws.id, `session-${ws.id}-${role}`)
+  if (seed.length) {
+    const active = sessions.get('session-alpha-builder')
+    active.running = true
+    running.add(active.id)
+    sessions.get('session-alpha-reviewer').pendingInteraction = {
+      kind: 'permission',
+    }
+    for (const session of sessions.values())
+      session.projectionValues.tokenUsage = {
+        inputTokens: 120,
+        outputTokens: 30,
+      }
+  }
+  if (persist) {
+    try {
+      const saved = JSON.parse(
+        await readFile(path.join(directory, 'lab-runtime.json'), 'utf8'),
+      )
+      sessions.clear()
+      for (const ws of workspaces) ws.sessionIds = []
+      running.clear()
+      for (const session of saved.sessions) {
+        addSession(session.workspaceId, session.id)
+        sessions.set(session.id, {
+          ...session,
+          running: false,
+          pendingInteraction: null,
+        })
+      }
+      for (const [id, prompts] of saved.history) history.set(id, prompts)
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+    }
+  }
+  let saving = Promise.resolve()
+  const saveRuntime = () => {
+    if (!persist) return Promise.resolve()
+    saving = saving.then(async () => {
+      const file = path.join(directory, 'lab-runtime.json'),
+        temporary = file + '.tmp'
+      await writeFile(
+        temporary,
+        JSON.stringify({
+          sessions: [...sessions.values()],
+          history: [...history],
+        }),
+      )
+      await rename(temporary, file)
+    })
+    return saving
+  }
   let state = initialBoard()
   if (persist) {
     try {
@@ -82,7 +133,11 @@ export async function makeBackend(
   )
   const task = (id) => board.snapshot().tasks.find((t) => t.id === id)
   const runtime = {
-    create: async (ws) => addSession(ws),
+    create: async (ws) => {
+      const id = addSession(ws)
+      await saveRuntime()
+      return id
+    },
     running: (id) => running.has(id),
     idle: async (id) => {
       await jobs.get(id)
@@ -92,6 +147,7 @@ export async function makeBackend(
       running.add(id)
       sessions.get(id).running = true
       history.set(id, [...(history.get(id) ?? []), prompt])
+      await saveRuntime()
       events.emit('change')
       const match = prompt.match(/(?:issue|task) ([^,\s]+), version (\d+)/),
         t = task(match?.[1])
@@ -184,9 +240,10 @@ export async function makeBackend(
             })
           }
         })
-        .finally(() => {
+        .finally(async () => {
           running.delete(id)
           sessions.get(id).running = false
+          await saveRuntime()
           events.emit('change')
           dispatcher.wake()
         })
@@ -287,6 +344,10 @@ export async function makeBackend(
       return completion.finish(t.id)
     },
   }
+  if (persist) {
+    await saveRuntime()
+    await writeFile(path.join(directory, 'board.json'), JSON.stringify(state))
+  }
   return {
     board,
     owner,
@@ -339,6 +400,7 @@ export async function makeBackend(
       await dispatcher.close()
       completion.close()
       await Promise.allSettled([...jobs.values()])
+      await saveRuntime()
       events.removeAllListeners()
     },
   }
