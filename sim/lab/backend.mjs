@@ -375,24 +375,43 @@ export async function makeBackend(
       sessions: [...sessions.values()],
     }),
     async idle() {
-      for (let n = 0; n < 200; n++) {
-        const active = [...jobs.values()]
-        await Promise.allSettled(active)
-        if (
-          !dispatcher.snapshot().activeTaskId &&
-          !dispatcher.snapshot().enabled
-        )
-          return
-        await new Promise((resolve) => setImmediate(resolve))
-        if (
-          dispatcher.snapshot().watch &&
-          !dispatcher.snapshot().activeTaskId &&
-          !board.analysisEligible(dispatcher.snapshot().workspaceId).length &&
-          !board.eligible(dispatcher.snapshot().workspaceId).length
-        )
-          return
+      for (;;) {
+        let wake, timer
+        const change = new Promise((resolve) => {
+          wake = resolve
+        })
+        events.once('change', wake)
+        try {
+          await Promise.allSettled([...jobs.values()])
+          await new Promise((resolve) => setImmediate(resolve))
+          const state = dispatcher.snapshot()
+          if (
+            !state.activeTaskId &&
+            (!state.enabled ||
+              (state.watch &&
+                !board.analysisEligible(state.workspaceId).length &&
+                !board.eligible(state.workspaceId).length))
+          )
+            return
+          await Promise.race([
+            change,
+            new Promise((_, reject) => {
+              timer = setTimeout(
+                () =>
+                  reject(
+                    Error(
+                      'Lab failed to settle: no state change within 10 seconds',
+                    ),
+                  ),
+                10000,
+              )
+            }),
+          ])
+        } finally {
+          events.off('change', wake)
+          clearTimeout(timer)
+        }
       }
-      throw Error('Lab failed to settle')
     },
     async close() {
       for (const resolve of gates.values()) resolve()
