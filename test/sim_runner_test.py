@@ -31,3 +31,10 @@ class SimRunnerTest(unittest.TestCase):
   with patch.object(sim.os,'killpg',side_effect=[None,None,PermissionError(),ProcessLookupError()]) as probe:
    self.assertTrue(sim.terminate(child))
    self.assertEqual(probe.call_count,4)
+
+ def test_transient_signal_denial_still_requires_absence_probe(self):
+  from unittest.mock import Mock,patch
+  child=Mock(pid=12345)
+  with patch.object(sim.os,'killpg',side_effect=[PermissionError(),PermissionError(),PermissionError(),ProcessLookupError()]) as probe:
+   self.assertTrue(sim.terminate(child))
+   self.assertEqual(probe.call_count,4)

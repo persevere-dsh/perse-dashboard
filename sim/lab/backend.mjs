@@ -4,6 +4,8 @@ import {
   initialBoard,
   boardSchema,
 } from '../../lib/types/host/board.js'
+import { runPhase } from '../../lib/types/host/phases.js'
+import { evidenceImage } from '../../lib/types/host/artifacts.js'
 import { Dispatcher } from '../../lib/types/host/dispatch.js'
 import { CompletionCoordinator } from '../../lib/types/host/completion.js'
 import { permissionControls } from '../../lib/types/client/permission-api.js'
@@ -21,6 +23,7 @@ export async function makeBackend(
     jobs = new Map(),
     running = new Set(),
     gates = new Map()
+  let closed = false
   let permissionDefault = 'workspace-write',
     permissionRevision = 0,
     permissionWritable = true,
@@ -222,7 +225,12 @@ export async function makeBackend(
             await new Promise((resolve) => gates.set(t.id, resolve))
           if (script.promptFailure) throw Error('Scripted prompt failure')
           if (prompt.startsWith('Analyze dashboard issue')) {
-            if (script.missingAnalysis) return
+            if (
+              script.missingAnalysis ||
+              (script.missingAnalysisOnce &&
+                !prompt.includes('REPORT_REMINDER'))
+            )
+              return
             await board.triage(id, {
               requestId: crypto.randomUUID(),
               taskId: t.id,
@@ -270,7 +278,11 @@ export async function makeBackend(
               },
             })
           } else {
-            if (script.missingReport) return
+            if (
+              script.missingReport ||
+              (script.missingReportOnce && !prompt.includes('REPORT_REMINDER'))
+            )
+              return
             for (const check of t.completionPolicy.checks) {
               if (
                 check.kind === 'text-equals' &&
@@ -288,11 +300,30 @@ export async function makeBackend(
                 )
               }
             }
+            if (script.images?.length) {
+              for (const image of script.images) {
+                if (path.isAbsolute(image.path) || image.path.includes('..'))
+                  continue
+                const target = path.join(
+                  workspaces.find((w) => w.id === t.workspaceId).path,
+                  image.path,
+                )
+                await mkdir(path.dirname(target), { recursive: true })
+                await writeFile(
+                  target,
+                  Buffer.from(
+                    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+                    'base64',
+                  ),
+                )
+              }
+            }
             await board.report(id, {
               requestId: crypto.randomUUID(),
               taskId: t.id,
               expectedVersion: t.version,
               outcome: script.blocked ? 'blocked' : 'review',
+              images: script.images ?? [],
               evidence:
                 'LAB_EXECUTION_EVIDENCE: scripted work completed in isolated workspace.',
             })
@@ -337,12 +368,22 @@ export async function makeBackend(
       }
     },
     create: async (request) => board.create(request),
+    image: async ({ id, path: relative }) => {
+      const t = task(id)
+      return evidenceImage(
+        t,
+        workspaces.find((w) => w.id === t.workspaceId).path,
+        relative,
+      )
+    },
     update: async (request) => {
       const t = task(request.id)
       if (
         [t?.sessionId, t?.analysisSessionId, t?.reviewSessionId].some(
           (id) => id && runtime.running(id),
-        )
+        ) ||
+        dispatcher.snapshot().activeTaskId === request.id ||
+        completion.active(request.id)
       )
         throw Error('busy: Stop the linked native Agent first')
       return board.update(request)
@@ -364,12 +405,15 @@ export async function makeBackend(
       })
       const id = await runtime.create(prepared.workspaceId)
       const t = await board.beginAnalysis(id, prepared.id, prepared.version)
-      await runtime.prompt(
+      void runPhase(
+        board,
+        runtime,
+        t,
         id,
+        'analysis',
         (await import('../../lib/types/host/prompts.js')).analysisPrompt(t),
+        () => closed,
       )
-      void runtime
-        .idle(id)
         .then(async () => {
           const now = task(t.id)
           if (now.status === 'triage' && now.analysisSessionId === id)
@@ -379,7 +423,8 @@ export async function makeBackend(
               expectedVersion: now.version,
               action: 'move',
               status: 'blocked',
-              evidence: 'Analysis Agent stopped without a structured report',
+              evidence:
+                'Analysis Agent stopped without a structured report after one reminder',
             })
         })
         .catch(async (error) => {
@@ -491,6 +536,7 @@ export async function makeBackend(
       }
     },
     async close() {
+      closed = true
       for (const resolve of gates.values()) resolve()
       gates.clear()
       await dispatcher.close()

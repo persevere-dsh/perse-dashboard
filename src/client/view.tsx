@@ -21,6 +21,8 @@ import type { createDashboardStore } from './store.ts'
 import type { Key } from './locales.ts'
 import { CompletionEditor } from './completion-editor.tsx'
 import { OptionGroup } from './option-group.tsx'
+import { completionBlocks, nextStep, taskNeedsAction } from './workflow.ts'
+import { EvidenceText, EvidenceImages } from './evidence.tsx'
 import { validSnapshot } from './validation.ts'
 import type {
   CompletionPolicy,
@@ -28,6 +30,7 @@ import type {
   DashboardSnapshot,
 } from '../contract/types.ts'
 export interface Injected extends PermissionControls {
+  image(r: { id: string; path: string }): Promise<string>
   create(r: CreateRequest): Promise<Task>
   update(r: UpdateRequest): Promise<Task>
   dispatch(r: DispatchRequest): Promise<DispatchState>
@@ -121,6 +124,26 @@ export function Dashboard(props: Props) {
     const key = attentionKey(agentState.get(session.id))
     return key ? [{ session, key }] : []
   })
+  const isRunning = (item: Task) =>
+    activeTaskSessions(item).some(
+      (id) =>
+        agentState.get(id as never)?.running ??
+        sessionState.byId[id as never]?.running,
+    ) || snapshot?.dispatch.activeTaskId === item.id
+  const queueFor = (item: Task) =>
+    !!snapshot?.dispatch.enabled &&
+    snapshot.dispatch.workspaceId === item.workspaceId
+  const actionable = tasks.filter((item) =>
+    taskNeedsAction(item, !!isRunning(item), queueFor(item)),
+  )
+  const attentionCount =
+    actionable.length +
+    attention.filter(
+      ({ session }) =>
+        !actionable.some((item) =>
+          activeTaskSessions(item).includes(session.id),
+        ),
+    ).length
   const taskAttention = (item: Task) =>
     activeTaskSessions(item).flatMap((id) => {
       const key = attentionKey(agentState.get(id as never))
@@ -310,7 +333,7 @@ export function Dashboard(props: Props) {
         {[
           [t('total'), tasks.length, '▦'],
           [t('active'), running, '◉'],
-          [t('attention'), attention.length, '!'],
+          [t('attention'), attentionCount, '!'],
           [
             t('review'),
             tasks.filter((item) => item.status === 'in-review').length,
@@ -326,7 +349,7 @@ export function Dashboard(props: Props) {
           ],
         ].map(([label, value, icon]) => (
           <div
-            className={`pd-stat ${label === t('attention') && attention.length ? 'is-attention' : ''}`}
+            className={`pd-stat ${label === t('attention') && attentionCount ? 'is-attention' : ''}`}
             key={label}
           >
             <div>
@@ -370,15 +393,28 @@ export function Dashboard(props: Props) {
           {error}
         </div>
       )}
-      {dispatch?.error && (
-        <div className="pd-banner" role="status">
-          {t('dispatchError')}: {dispatch.error}
-        </div>
-      )}
+      {dispatch?.error &&
+        (!workspaceId || dispatch.workspaceId === workspaceId) && (
+          <div className="pd-banner" role="status">
+            {t('dispatchError')}: {dispatch.error}
+            {dispatch.errorTaskId && (
+              <button onClick={() => setSelected(dispatch.errorTaskId!)}>
+                {t('failedQueueTask')}
+              </button>
+            )}
+          </div>
+        )}
       <div className="pd-toolbar">
         <div className="pd-segments" role="group" aria-label={t('view')}>
           {(['board', 'list', 'sessions'] as const).map((v) => (
-            <button key={v} aria-pressed={tab === v} onClick={() => setTab(v)}>
+            <button
+              key={v}
+              aria-pressed={tab === v}
+              onClick={() => {
+                setSelected(null)
+                setTab(v)
+              }}
+            >
               {t(
                 v === 'board'
                   ? 'board'
@@ -392,7 +428,10 @@ export function Dashboard(props: Props) {
         <select
           aria-label={t('all')}
           value={workspaceId}
-          onChange={(e) => setWorkspaceId(e.target.value)}
+          onChange={(e) => {
+            setSelected(null)
+            setWorkspaceId(e.target.value)
+          }}
         >
           <option value="">{t('all')}</option>
           {workspaces.map((w) => (
@@ -436,7 +475,7 @@ export function Dashboard(props: Props) {
                 : otherQueueActive
                   ? t('otherQueue')
                   : queueActive
-                    ? `${t(queueAttention ?? 'processing')} · ${dispatch?.processed}/${dispatch?.maxTasks}`
+                    ? `${t(queueAttention ?? (dispatch?.activeTaskId ? 'processing' : 'queueListening'))} · ${dispatch?.processed}/${dispatch?.maxTasks}`
                     : t('automationHelp')}
             </p>
           </div>
@@ -493,6 +532,25 @@ export function Dashboard(props: Props) {
           </div>
         )}
       </section>
+      {actionable.length > 0 && (
+        <section className="pd-next-steps" aria-label={t('nextSteps')}>
+          <h2>
+            {t('nextSteps')}{' '}
+            <span className="pd-count">{actionable.length}</span>
+          </h2>
+          <div className="pd-next-grid">
+            {actionable.map((item) => (
+              <article key={item.id}>
+                <strong>{item.title}</strong>
+                <p>{t(nextStep(item, !!isRunning(item), queueFor(item)))}</p>
+                <button onClick={() => setSelected(item.id)}>
+                  {t('openTask')}
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
       <PermissionSettings
         t={t}
         loadPermissions={props.loadPermissions}
@@ -785,6 +843,7 @@ export function Dashboard(props: Props) {
                       linkedRunning ||
                       !commandsAvailable ||
                       task.archived ||
+                      !task.criteria.length ||
                       !task.evidence ||
                       !task.checked.every(Boolean)
                     }
@@ -793,6 +852,26 @@ export function Dashboard(props: Props) {
                     {t('accept')}
                   </button>
                 )}
+                {[
+                  'blocked',
+                  'in-progress',
+                  'triage',
+                  'needs-info',
+                  'in-review',
+                ].includes(task.status) &&
+                  !linkedRunning &&
+                  !task.archived && (
+                    <button
+                      disabled={
+                        busy ||
+                        !commandsAvailable ||
+                        dispatch?.activeTaskId === task.id
+                      }
+                      onClick={() => mutation(task, { action: 'retry' })}
+                    >
+                      {t('recoverTask')}
+                    </button>
+                  )}
                 {task.status === 'done' && !task.archived && (
                   <button
                     disabled={busy || linkedRunning || !commandsAvailable}
@@ -832,6 +911,42 @@ export function Dashboard(props: Props) {
               </button>
             </div>
           ))}
+          <section className="pd-next-detail" aria-label={t('nextSteps')}>
+            <h3>{t('nextSteps')}</h3>
+            <p>{t(nextStep(task, !!isRunning(task), queueFor(task)))}</p>
+            {task.status === 'in-review' && (
+              <>
+                <h4>{t('completionGates')}</h4>
+                {completionBlocks(task).length ? (
+                  <ul>
+                    {completionBlocks(task).map((key) => (
+                      <li key={key}>{t(key)}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>{t('autoEligible')}</p>
+                )}
+                <p>{t('acceptRemaining')}</p>
+              </>
+            )}
+            {task.status === 'blocked' && <EvidenceText text={task.evidence} />}
+            {task.automationNote && (
+              <p role="status">
+                {task.automationNote === 'phase-report-missing'
+                  ? t('phaseMissingNote')
+                  : task.automationNote === 'human-acceptance-required' ||
+                      task.automationNote.startsWith(
+                        'Automatic completion held:',
+                      )
+                    ? t('humanGateNote')
+                    : task.automationNote === 'review-failed'
+                      ? t('reviewFailedNote')
+                      : task.automationNote === 'review-report-missing'
+                        ? t('reviewMissingNote')
+                        : task.automationNote}
+              </p>
+            )}
+          </section>
           {task.completion && (
             <div className="pd-receipt">
               <span className="pd-status-icon is-live">✓</span>
@@ -921,6 +1036,7 @@ export function Dashboard(props: Props) {
                 <label key={i} className="pd-check">
                   <input
                     type="checkbox"
+                    aria-label={criterion}
                     checked={task.checked[i]}
                     disabled={
                       busy ||
@@ -938,23 +1054,49 @@ export function Dashboard(props: Props) {
                       })
                     }
                   />
-                  {criterion}
+                  <span>
+                    {criterion}
+                    {task.review?.results
+                      .filter((r) => r.criterion === i)
+                      .map((r, n) => (
+                        <span className="pd-criterion-result" key={n}>
+                          <strong>
+                            {t('criterionReview')}: {r.passed ? '✓' : '✗'}
+                          </strong>
+                          <span className="pd-criterion-copy">
+                            {r.evidence}
+                          </span>
+                        </span>
+                      ))}
+                  </span>
                 </label>
               ))}
-              <Evidence
-                key={`evidence:${task.id}`}
-                task={task}
-                t={t}
-                busy={busy || linkedRunning || !commandsAvailable}
-                dirty={(value) =>
-                  setDirtyParts((old) =>
-                    old.evidence === value ? old : { ...old, evidence: value },
-                  )
-                }
-                save={(evidence, version) =>
-                  mutation({ ...task, version }, { action: 'edit', evidence })
-                }
-              />
+              {task.evidence && (
+                <section className="pd-section">
+                  <h3>{t('evidenceReport')}</h3>
+                  <EvidenceText text={task.evidence} />
+                  <EvidenceImages task={task} load={props.image} t={t} />
+                </section>
+              )}
+              <details>
+                <summary>{t('editEvidence')}</summary>
+                <Evidence
+                  key={`evidence:${task.id}`}
+                  task={task}
+                  t={t}
+                  busy={busy || linkedRunning || !commandsAvailable}
+                  dirty={(value) =>
+                    setDirtyParts((old) =>
+                      old.evidence === value
+                        ? old
+                        : { ...old, evidence: value },
+                    )
+                  }
+                  save={(evidence, version) =>
+                    mutation({ ...task, version }, { action: 'edit', evidence })
+                  }
+                />
+              </details>
             </section>
           </section>
           <section
@@ -969,7 +1111,26 @@ export function Dashboard(props: Props) {
                 <h3>{t('analysis')}</h3>
                 <p>{task.analysis.summary}</p>
                 <p>
-                  {task.analysis.risk} · {task.analysis.route}
+                  {t(
+                    (
+                      {
+                        low: 'riskLow',
+                        medium: 'riskMedium',
+                        high: 'riskHigh',
+                      } as const
+                    )[task.analysis.risk],
+                  )}{' '}
+                  ·{' '}
+                  {t(
+                    (
+                      {
+                        express: 'routeExpress',
+                        staged: 'routeStaged',
+                        'needs-info': 'routeNeedsInfo',
+                        human: 'routeHuman',
+                      } as const
+                    )[task.analysis.route],
+                  )}
                 </p>
                 <ol>
                   {task.analysis.plan.map((step, i) => (
@@ -1034,7 +1195,9 @@ export function Dashboard(props: Props) {
                 ))}
               </details>
             )}
-            {['todo', 'triage', 'needs-info'].includes(task.status) &&
+            {['todo', 'triage', 'needs-info', 'blocked'].includes(
+              task.status,
+            ) &&
               !task.archived && (
                 <TaskEditor
                   key={`editor:${task.id}`}
@@ -1139,7 +1302,7 @@ export function Dashboard(props: Props) {
               .map((a) => (
                 <div className="pd-audit" key={a.seq}>
                   {a.action} ·{' '}
-                  {a.actor === 'human' ? t('brand') : a.actor.slice(0, 16)}
+                  {a.actor === 'human' ? t('owner') : a.actor.slice(0, 16)}
                   <br />
                   {new Date(a.time).toLocaleString()}
                 </div>
@@ -1370,11 +1533,16 @@ function CreateForm({
           requestId: crypto.randomUUID(),
           workspaceId: ws,
           title,
-          description,
-          criteria: criteria
-            .split('\n')
-            .map((s) => s.trim())
-            .filter(Boolean),
+          description:
+            intake && criteria.trim()
+              ? `${description}\n\nAcceptance expectations supplied by owner:\n${criteria}`.trim()
+              : description,
+          criteria: intake
+            ? []
+            : criteria
+                .split('\n')
+                .map((s) => s.trim())
+                .filter(Boolean),
           priority,
           assignee: assignee || null,
           intake,
@@ -1414,7 +1582,7 @@ function CreateForm({
         />
       </label>
       <label className="pd-field pd-span">
-        {t('criteria')}
+        {t(intake ? 'criteriaOptional' : 'criteria')}
         <textarea
           required={!intake}
           value={criteria}
@@ -1485,14 +1653,24 @@ function CreateForm({
 
 type EditableTask = Pick<
   Task,
-  'title' | 'description' | 'priority' | 'completionPolicy' | 'needsManual'
+  | 'title'
+  | 'description'
+  | 'criteria'
+  | 'priority'
+  | 'completionPolicy'
+  | 'needsManual'
 >
 const editable = (task: Task): EditableTask => ({
   title: task.title,
+  criteria: task.criteria,
   description: task.description,
   priority: task.priority,
-  completionPolicy: task.completionPolicy,
-  needsManual: task.needsManual,
+  completionPolicy: task.completionPolicy ?? {
+    mode: 'manual',
+    instructions: '',
+    checks: [],
+  },
+  needsManual: task.needsManual ?? false,
 })
 function TaskEditor({
   task,
@@ -1559,6 +1737,46 @@ function TaskEditor({
           onChange={(e) => change('description', e.target.value)}
         />
       </label>
+      <fieldset className="pd-criteria-editor">
+        <legend>{t('criteriaItems')}</legend>
+        <p>{t('criteriaGenerated')}</p>
+        {draft.criteria.map((criterion, i) => (
+          <div className="pd-criterion-input" key={i}>
+            <input
+              aria-label={`${t('criterionText')} ${i + 1}`}
+              value={criterion}
+              maxLength={300}
+              disabled={busy}
+              onChange={(e) =>
+                change(
+                  'criteria',
+                  draft.criteria.map((v, n) => (n === i ? e.target.value : v)),
+                )
+              }
+            />
+            <button
+              type="button"
+              disabled={busy}
+              aria-label={`${t('removeCriterion')} ${i + 1}`}
+              onClick={() =>
+                change(
+                  'criteria',
+                  draft.criteria.filter((_, n) => n !== i),
+                )
+              }
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          disabled={busy || draft.criteria.length >= 20}
+          onClick={() => change('criteria', [...draft.criteria, ''])}
+        >
+          {t('addCriterion')}
+        </button>
+      </fieldset>
       <label className="pd-field">
         {t('priority')}
         <select
@@ -1590,7 +1808,13 @@ function TaskEditor({
       />
       <button
         className="pd-primary"
-        disabled={busy || !draft.title.trim() || !dirty || stale}
+        disabled={
+          busy ||
+          !draft.title.trim() ||
+          draft.criteria.some((c) => !c.trim()) ||
+          !dirty ||
+          stale
+        }
         onClick={async () => {
           if (await save(draft, version)) setBaseline(draft)
         }}

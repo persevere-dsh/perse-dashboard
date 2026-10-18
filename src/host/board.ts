@@ -11,6 +11,7 @@ import type {
   ReviewReport,
   CompletionReceipt,
 } from '../contract/types.ts'
+import { reviewPrompt } from './prompts.ts'
 import {
   manualPolicy,
   completionPolicySchema,
@@ -22,6 +23,11 @@ import {
   RULE_VERSION,
   digest,
 } from './policy.ts'
+export const imageSchema = z.object({
+  path: z.string().min(1).max(1000),
+  caption: z.string().max(500),
+  criterion: z.number().int().nonnegative().optional(),
+})
 const status = z.enum([
   'triage',
   'needs-info',
@@ -39,6 +45,7 @@ export const taskSchema = z.object({
   criteria: z.array(z.string()),
   checked: z.array(z.boolean()),
   evidence: z.string(),
+  images: z.array(imageSchema).max(12).default([]),
   priority: z.number().int().min(0).max(2),
   assignee: z.string().nullable(),
   sessionId: z.string().nullable(),
@@ -52,6 +59,7 @@ export const taskSchema = z.object({
   analysisSessionId: z.string().nullable().default(null),
   analysis: analysisSchema.nullable().default(null),
   reviewSessionId: z.string().nullable().default(null),
+  reviewPromptHash: z.string().nullable().default(null),
   review: reviewSchema.nullable().default(null),
   completionPolicy: completionPolicySchema.default(manualPolicy),
   completion: receiptSchema.nullable().default(null),
@@ -101,7 +109,16 @@ export const updateSchema = z.strictObject({
   requestId,
   id: z.string(),
   expectedVersion: z.number().int().positive(),
-  action: z.enum(['edit', 'assign', 'move', 'archive', 'restore', 'accept']),
+  action: z.enum([
+    'edit',
+    'assign',
+    'move',
+    'archive',
+    'restore',
+    'accept',
+    'retry',
+  ]),
+  criteria: z.array(text).max(20).optional(),
   title: text.optional(),
   description: z.string().max(12000).optional(),
   priority: z.number().int().min(0).max(2).optional(),
@@ -258,6 +275,7 @@ export class BoardController {
           criteria: [...r.criteria],
           checked: r.criteria.map(() => false),
           evidence: '',
+          images: [],
           sessionId: null,
           status: r.intake ? 'triage' : 'todo',
           version: 1,
@@ -269,6 +287,7 @@ export class BoardController {
           analysisSessionId: null,
           analysis: null,
           reviewSessionId: null,
+          reviewPromptHash: null,
           review: null,
           completionPolicy: r.completionPolicy ?? manualPolicy(),
           completion: null,
@@ -297,8 +316,9 @@ export class BoardController {
         throw new BoardError('archived', 'Restore the task before changing it')
       if (
         r.action === 'edit' &&
-        !['todo', 'triage', 'needs-info'].includes(old.status) &&
-        (r.title !== undefined ||
+        !['todo', 'triage', 'needs-info', 'blocked'].includes(old.status) &&
+        (r.criteria !== undefined ||
+          r.title !== undefined ||
           r.description !== undefined ||
           r.completionPolicy !== undefined ||
           r.needsManual !== undefined)
@@ -313,6 +333,10 @@ export class BoardController {
         updatedAt: this.env.now(),
       }
       if (r.action === 'edit') {
+        if (r.criteria !== undefined) {
+          task.criteria = [...r.criteria]
+          task.checked = r.criteria.map(() => false)
+        }
         if (r.title !== undefined) task.title = r.title
         if (r.description !== undefined) task.description = r.description
         if (r.priority !== undefined) task.priority = r.priority
@@ -320,6 +344,7 @@ export class BoardController {
           task.completionPolicy = r.completionPolicy
         if (r.needsManual !== undefined) task.needsManual = r.needsManual
         if (
+          r.criteria !== undefined ||
           r.title !== undefined ||
           r.description !== undefined ||
           r.completionPolicy !== undefined ||
@@ -327,12 +352,49 @@ export class BoardController {
         ) {
           task.analysis = null
           task.analysisSessionId = null
+          task.review = null
+          task.reviewPromptHash = null
+          task.reviewSessionId = null
+          task.completion = null
           task.automationNote = ''
           if (task.intake || task.completionPolicy.mode !== 'manual') {
             task.intake = true
             task.status = 'triage'
           }
         }
+      }
+      if (r.action === 'retry') {
+        if (
+          ![
+            'blocked',
+            'in-progress',
+            'triage',
+            'needs-info',
+            'in-review',
+          ].includes(old.status)
+        )
+          throw new BoardError(
+            'invalid-transition',
+            'Only unfinished work can be retried',
+          )
+        task.status =
+          (task.intake || !task.criteria.length) &&
+          (!task.analysis ||
+            ['needs-info', 'human'].includes(task.analysis.route))
+            ? 'triage'
+            : 'todo'
+        if (task.status === 'triage') {
+          task.intake = true
+          task.analysis = null
+          task.analysisSessionId = null
+        }
+        task.sessionId = null
+        task.review = null
+        task.reviewPromptHash = null
+        task.reviewSessionId = null
+        task.completion = null
+        task.checked = task.criteria.map(() => false)
+        task.automationNote = ''
       }
       if (r.action === 'assign') {
         this.checkAssignee(task.workspaceId, r.assignee ?? null)
@@ -399,10 +461,21 @@ export class BoardController {
           throw new BoardError('evidence-required', 'Review needs evidence')
         task.status = r.status
         if (r.status === 'todo') {
+          if (
+            !task.criteria.length ||
+            (task.intake &&
+              (!task.analysis ||
+                !['express', 'staged'].includes(task.analysis.route)))
+          )
+            throw new BoardError(
+              'analysis-required',
+              'Analyze and clarify the task before execution',
+            )
           task.sessionId = null
           task.checked = task.checked.map(() => false)
           task.completion = null
           task.review = null
+          task.reviewPromptHash = null
           task.reviewSessionId = null
           task.automationNote = ''
         }
@@ -412,6 +485,7 @@ export class BoardController {
           task.analysisSessionId = null
           task.sessionId = null
           task.review = null
+          task.reviewPromptHash = null
           task.reviewSessionId = null
           task.completion = null
           task.checked = task.checked.map(() => false)
@@ -455,7 +529,10 @@ export class BoardController {
             !t.archived &&
             t.workspaceId === ws.id &&
             t.status === 'todo' &&
-            (!t.intake || !!t.analysis) &&
+            t.criteria.length > 0 &&
+            (!t.intake ||
+              (!!t.analysis &&
+                ['express', 'staged'].includes(t.analysis.route))) &&
             (!t.assignee || t.assignee === sessionId) &&
             (!r.taskId || t.id === r.taskId),
         )
@@ -481,6 +558,7 @@ export class BoardController {
         taskId: z.string(),
         expectedVersion: z.number().int().positive(),
         evidence: z.string().trim().min(1).max(20000),
+        images: z.array(imageSchema).max(12).optional(),
         outcome: z.enum(['review', 'blocked']).optional(),
       })
       .parse(raw)
@@ -499,11 +577,23 @@ export class BoardController {
           'invalid-transition',
           'Only a running task can report',
         )
+      if (
+        r.images?.some(
+          (image) =>
+            image.criterion !== undefined &&
+            image.criterion >= task.criteria.length,
+        )
+      )
+        throw new BoardError(
+          'criteria-mismatch',
+          'Image criterion is outside the acceptance list',
+        )
       return {
         action: 'report',
         task: {
           ...task,
           evidence: r.evidence,
+          images: r.images ?? [],
           status: r.outcome === 'blocked' ? 'blocked' : 'in-review',
           version: task.version + 1,
           updatedAt: this.env.now(),
@@ -523,7 +613,9 @@ export class BoardController {
           t.workspaceId === workspaceId &&
           !t.archived &&
           t.status === 'todo' &&
-          (!t.intake || !!t.analysis),
+          t.criteria.length > 0 &&
+          (!t.intake ||
+            (!!t.analysis && ['express', 'staged'].includes(t.analysis.route))),
       )
       .sort((a, b) => b.priority - a.priority || a.createdAt - b.createdAt)
   }
@@ -577,7 +669,7 @@ export class BoardController {
         taskId: z.string(),
         expectedVersion: z.number().int().positive(),
         analysis: analysisSchema,
-        criteria: z.array(text).min(1).max(20),
+        criteria: z.array(text).max(20),
       })
       .parse(raw)
     return this.mutate(r, sessionId, (b) => {
@@ -606,6 +698,14 @@ export class BoardController {
         throw new BoardError(
           'questions-required',
           'Missing information requires specific questions',
+        )
+      if (
+        !r.criteria.length &&
+        ['express', 'staged'].includes(r.analysis.route)
+      )
+        throw new BoardError(
+          'criteria-required',
+          'Executable analysis requires criteria',
         )
       const analysis = {
         ...r.analysis,
@@ -656,16 +756,16 @@ export class BoardController {
           'not-independent',
           'Review requires a different Session in this workspace',
         )
-      return {
-        action: 'review-start',
-        task: {
-          ...old,
-          reviewSessionId: sessionId,
-          review: null,
-          version: old.version + 1,
-          updatedAt: this.env.now(),
-        },
+      const task: Task = {
+        ...old,
+        reviewSessionId: sessionId,
+        review: null,
+        version: old.version + 1,
+        updatedAt: this.env.now(),
+        reviewPromptHash: null,
       }
+      task.reviewPromptHash = digest(reviewPrompt(task))
+      return { action: 'review-start', task }
     })
   }
   submitReview(sessionId: string, raw: ReviewReport) {

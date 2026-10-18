@@ -1,3 +1,11 @@
+# 1.4.0
+
+- Recover reasoning-only and missing-report stops with one bounded reminder; isolate task-local failure and preserve infrastructure pause behavior.
+- Add next-step guidance, explicit owner recovery and visible completion gates; review staged work without automatically accepting it.
+- Show readable execution sections, per-criterion review results and bounded workspace image evidence with preview.
+- Generate criteria from optional owner expectations and allow criterion editing before execution; preserve accepted evidence and native permission authority.
+- Add workflow recovery browser/native journeys and contract coverage; include the merged radio group controls from 1.2.1.
+
 # Changelog
 
 ## Unreleased

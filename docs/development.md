@@ -21,6 +21,6 @@ Fixture modules and the patch file also live in that external runtime root, unde
 
 ## Scenario coverage and replay
 
-Lab has a checked-in 22-case inventory. `--scenario <id>` focuses a case and `--repeat N` repeats a browser suite into distinct evidence folders. Browser assertions exercise the production UI against the stateful controller backend, not static screenshot variants. HTTP faults, explicit first-load release, disconnect/reconnect and recovery are controlled steps. Domain tests additionally exercise ordered SSE replay from Last-Event-ID, stale writes without committed frames, workspace isolation, concurrent claims, rule failures and persisted restart.
+Lab has a checked-in 23-case inventory. `--scenario <id>` focuses a case and `--repeat N` repeats a browser suite into distinct evidence folders. Browser assertions exercise the production UI against the stateful controller backend, not static screenshot variants. HTTP faults, explicit first-load release, disconnect/reconnect and recovery are controlled steps. Domain tests additionally exercise ordered SSE replay from Last-Event-ID, stale writes without committed frames, workspace isolation, concurrent claims, rule failures and persisted restart.
 
 Native/live fixtures record the actual versioned DSH Gateway snapshot. Fixture refreshes must retain manifest version, capture origin and SHA256; review the data and run boundary/decode tests. Never capture credentials, authentication URLs, private conversations or production workspace files. Record synthetic vs real-model origin explicitly.

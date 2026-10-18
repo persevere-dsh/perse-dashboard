@@ -110,6 +110,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       }
       const injected = (): Injected => ({
         ...permissions,
+        image: async (request) => {
+          const result = await scope.remote.perseDashboard.image(request)
+          if (!result.ok) throw result.error
+          return result.value
+        },
         create: async (request) => {
           const result = await scope.remote.perseDashboard.create(request)
           if (!result.ok) throw result.error

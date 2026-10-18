@@ -29,6 +29,16 @@ const schema = z.object({
         criteria: z.array(z.string()),
         checked: z.array(z.boolean()),
         evidence: z.string(),
+        images: z
+          .array(
+            z.object({
+              path: z.string(),
+              caption: z.string(),
+              criterion: z.number().int().nonnegative().optional(),
+            }),
+          )
+          .max(12)
+          .optional(),
         priority: z.number().int().min(0).max(2),
         assignee: z.string().nullable(),
         sessionId: z.string().nullable(),

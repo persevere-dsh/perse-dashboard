@@ -295,7 +295,7 @@ try {
         : 'Write auto-result.txt containing exactly DSH_AUTO_NATIVE_OK and verify it.',
     )
   await automatic
-    .getByLabel('验收标准（每行一条）', { exact: true })
+    .getByLabel('验收标准（可选）', { exact: true })
     .fill(
       'auto-result.txt contains exactly ' +
         (runtime.lane === 'live' ? 'DSH_AUTO_LIVE_OK' : 'DSH_AUTO_NATIVE_OK'),
@@ -375,6 +375,93 @@ try {
   await page.getByRole('button', { name: '暂停后续议题', exact: true }).click()
   check('watcher stays armed between issues and can be paused from the UI')
   if (runtime.lane === 'native') {
+    const broken = await rpc('perseDashboard/create', {
+      request: {
+        requestId: crypto.randomUUID(),
+        workspaceId: ws,
+        title: 'Native missing phase report',
+        description: 'PERSE_MISSING_ANALYSIS',
+        criteria: [],
+        priority: 1,
+        assignee: null,
+        intake: true,
+        completionPolicy: { mode: 'reviewed', instructions: '', checks: [] },
+      },
+    })
+    const repaired = await rpc('perseDashboard/create', {
+      request: {
+        requestId: crypto.randomUUID(),
+        workspaceId: ws,
+        title: 'Native bounded report repair',
+        description: 'PERSE_MISSING_ONCE PERSE_IMAGE_EVIDENCE',
+        criteria: [],
+        priority: 1,
+        assignee: null,
+        intake: true,
+        completionPolicy: { mode: 'reviewed', instructions: '', checks: [] },
+      },
+    })
+    await page.getByRole('button', { name: '启动队列', exact: true }).click()
+    await until(
+      async () =>
+        (await snapshot()).tasks.find((t) => t.id === repaired.id)?.status,
+      'done',
+      60000,
+    )
+    const state = await snapshot()
+    const repairedTask = state.tasks.find((t) => t.id === repaired.id)
+    expect(repairedTask.images).toHaveLength(1)
+    await page
+      .locator('.pd-card')
+      .filter({ hasText: 'Native bounded report repair' })
+      .click()
+    const evidenceImage = page.locator('.pd-image-evidence img')
+    await expect(evidenceImage).toBeVisible()
+    await expect
+      .poll(() => evidenceImage.evaluate((img) => img.naturalWidth))
+      .toBe(1)
+    await page
+      .getByRole('button', {
+        name: '预览证据图片: Native image readback',
+        exact: true,
+      })
+      .click()
+    await expect(page.locator('.pd-image-preview')).toBeVisible()
+    await page.getByRole('button', { name: '关闭图片', exact: true }).click()
+    await page.screenshot({
+      path: path.join(run, 'native-recovered-image-evidence.png'),
+      fullPage: true,
+    })
+    await closeDetail()
+    check(
+      'recorded image evidence is loaded through real owner Remote and previews within native DSH CSP',
+    )
+    expect(state.tasks.find((t) => t.id === broken.id).status).toBe('blocked')
+    expect(state.dispatch.error).toBeNull()
+    await page
+      .locator('.pd-card')
+      .filter({ hasText: 'Native missing phase report' })
+      .click()
+    await expect(page.locator('.pd-next-detail')).toContainText('一次补报提醒')
+    await page.getByRole('button', { name: '恢复任务', exact: true }).click()
+    await until(
+      async () =>
+        (await snapshot()).tasks.find((t) => t.id === broken.id)?.status,
+      'triage',
+    )
+    await closeDetail()
+    const deferred = (await snapshot()).tasks.find((t) => t.id === broken.id)
+    await rpc('perseDashboard/update', {
+      request: {
+        requestId: crypto.randomUUID(),
+        id: deferred.id,
+        expectedVersion: deferred.version,
+        action: 'archive',
+      },
+    })
+    check(
+      'real DSH reasoning-only stops receive one report reminder; task failure is isolated; later issue auto-completes and owner recovery works',
+    )
     await page.getByRole('button', { name: '权限设置', exact: true }).click()
     const permissionDialog = page.getByRole('dialog', {
       name: 'DSH 默认执行权限',
@@ -407,10 +494,13 @@ try {
         'PERSE_APPROVAL_PROBE: request a protected write, never fabricate authorization.',
       )
     await probe
-      .getByLabel('验收标准（每行一条）', { exact: true })
+      .getByLabel('验收标准（可选）', { exact: true })
       .fill('Protected fixture must not be written without explicit approval')
     await probe.getByLabel('执行前自动分析议题', { exact: true }).uncheck()
-    await probe.getByLabel('完成策略', { exact: true }).selectOption('manual')
+    await probe
+      .getByRole('radiogroup', { name: '完成策略', exact: true })
+      .getByRole('radio', { name: '人工验收', exact: true })
+      .check()
     await probe.getByRole('button', { name: '创建任务', exact: true }).click()
     await expect(
       page.getByRole('dialog', { name: probeTitle, exact: true }),

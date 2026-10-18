@@ -21,6 +21,8 @@ import {
 import { Dispatcher, type DispatchRuntime } from './host/dispatch.ts'
 import { CompletionCoordinator } from './host/completion.ts'
 import { analysisPrompt } from './host/prompts.ts'
+import { runPhase } from './host/phases.ts'
+import { evidenceImage } from './host/artifacts.ts'
 import type {
   CreateRequest,
   UpdateRequest,
@@ -55,6 +57,7 @@ export class DashboardService extends TypertRemoteService {
   private completion!: CompletionCoordinator
   private runtime!: DispatchRuntime
   private stopped = false
+  private analyses = new Set<string>()
   private listeners = new Set<() => void>()
   constructor(ctx: Context) {
     super(ctx, 'perseDashboard')
@@ -178,12 +181,17 @@ export class DashboardService extends TypertRemoteService {
         .snapshot()
         .tasks.find((t) => t.id === request.id)
       if (
-        [
+        ([
           current?.sessionId,
           current?.analysisSessionId,
           current?.reviewSessionId,
-        ].some((id) => id && this.runtime.running(id)) &&
-        ['move', 'accept', 'archive', 'assign', 'edit'].includes(request.action)
+        ].some((id) => id && this.runtime.running(id)) ||
+          this.dispatcher.snapshot().activeTaskId === request.id ||
+          this.completion.active(request.id) ||
+          this.analyses.has(request.id)) &&
+        ['move', 'accept', 'archive', 'assign', 'edit', 'retry'].includes(
+          request.action,
+        )
       )
         throw new BoardError(
           'busy',
@@ -213,7 +221,10 @@ export class DashboardService extends TypertRemoteService {
       if (
         [old.sessionId, old.analysisSessionId, old.reviewSessionId].some(
           (id) => id && this.runtime.running(id),
-        )
+        ) ||
+        this.dispatcher.snapshot().activeTaskId === request.id ||
+        this.completion.active(request.id) ||
+        this.analyses.has(request.id)
       )
         throw new BoardError('busy', 'Stop the linked Agent before reanalyzing')
       const prepared = await this.board.update({
@@ -227,21 +238,16 @@ export class DashboardService extends TypertRemoteService {
         prepared.id,
         prepared.version,
       )
-      try {
-        await this.runtime.prompt(id, analysisPrompt(task), crypto.randomUUID())
-      } catch (error) {
-        await this.board.update({
-          requestId: crypto.randomUUID(),
-          id: task.id,
-          expectedVersion: task.version,
-          action: 'move',
-          status: 'blocked',
-          evidence: String(error),
-        })
-        throw error
-      }
-      void this.runtime
-        .idle(id)
+      this.analyses.add(task.id)
+      void runPhase(
+        this.board,
+        this.runtime,
+        task,
+        id,
+        'analysis',
+        analysisPrompt(task),
+        () => this.stopped,
+      )
         .then(async () => {
           if (this.stopped) return
           const now = this.board.snapshot().tasks.find((t) => t.id === task.id)
@@ -252,12 +258,26 @@ export class DashboardService extends TypertRemoteService {
               expectedVersion: now.version,
               action: 'move',
               status: 'blocked',
-              evidence: 'Analysis Agent stopped without a structured report',
+              evidence:
+                'Analysis Agent stopped without a structured report after one reminder',
             })
         })
-        .catch((error) => {
+        .catch(async (error) => {
           this.ctx.logger.warn(error)
+          if (this.stopped) return
+          const now = this.board.snapshot().tasks.find((t) => t.id === task.id)
+          if (now?.status === 'triage' && now.analysisSessionId === id)
+            await this.board.update({
+              requestId: crypto.randomUUID(),
+              id: now.id,
+              expectedVersion: now.version,
+              action: 'move',
+              status: 'blocked',
+              evidence: String(error),
+            })
         })
+        .finally(() => this.analyses.delete(task.id))
+        .catch((error) => this.ctx.logger.warn(error))
       return task
     })
   }
@@ -273,6 +293,17 @@ export class DashboardService extends TypertRemoteService {
           'Only active review tasks may be verified',
         )
       return this.completion.finish(task.id)
+    })
+  }
+  @Remote
+  async image(request: { id: string; path: string }): Promise<string> {
+    return this.protect(async () => {
+      const task = this.board.snapshot().tasks.find((t) => t.id === request.id)
+      if (!task) throw new BoardError('not-found', 'Task no longer exists')
+      const ws = this.ctx.workspaceRegistry.get(task.workspaceId as never)
+      if (!ws)
+        throw new BoardError('workspace-missing', 'Workspace is unavailable')
+      return evidenceImage(task, ws.path, request.path)
     })
   }
   @Remote({ mode: 'stream' })
@@ -334,6 +365,20 @@ export class DashboardService extends TypertRemoteService {
         description:
           'Submit concrete verification evidence or a blocked outcome. The Host applies the owner completion policy after the Agent becomes idle; a report alone never completes work.',
         parameters: {
+          images: {
+            type: 'array',
+            description:
+              'Optional workspace-relative image evidence, max 12. Images supplement concrete verification evidence.',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                path: { type: 'string', required: true },
+                caption: { type: 'string', required: true },
+                criterion: { type: 'integer' },
+              },
+            },
+          },
           outcome: {
             type: 'string',
             enum: ['review', 'blocked'],

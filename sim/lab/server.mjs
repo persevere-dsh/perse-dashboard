@@ -181,7 +181,14 @@ const server = http.createServer(async (req, res) => {
           )
         const name = url.pathname.split('/').pop()
         if (
-          !['create', 'update', 'dispatch', 'analyze', 'verify'].includes(name)
+          ![
+            'create',
+            'update',
+            'dispatch',
+            'analyze',
+            'verify',
+            'image',
+          ].includes(name)
         )
           return json(res, { ok: false, error: 'Unknown command' }, 404)
         if (fault === 'detail-error' && name === 'update')
@@ -191,7 +198,7 @@ const server = http.createServer(async (req, res) => {
             503,
           )
         const value = await backend.owner[name](body)
-        await publish()
+        if (name !== 'image') await publish()
         return json(res, { ok: true, value })
       }
     }

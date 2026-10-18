@@ -59,24 +59,34 @@ class SimulationAdapter extends LlmAdapter {
       data &&
       !toolResults.length
     ) {
-      block = call('dashboard_triage', {
-        taskId: data.taskId,
-        expectedVersion: data.version,
-        criteria: data.criteria.length
-          ? data.criteria
-          : ['Native workspace artifact is verified'],
-        analysis: {
-          summary: 'Deterministic analysis through the actual DSH tool',
-          plan: [
-            'Produce isolated artifact',
-            'Read back result',
-            'Report evidence',
-          ],
-          risk: 'low',
-          route: 'express',
-          questions: [],
-        },
-      })
+      if (
+        data.description.includes('PERSE_MISSING_ANALYSIS') ||
+        (data.description.includes('PERSE_MISSING_ONCE') &&
+          !user.includes('REPORT_REMINDER'))
+      ) {
+        block = {
+          type: 'reasoning',
+          text: 'Simulation: analysis reasoning ended before reporting.',
+        }
+      } else
+        block = call('dashboard_triage', {
+          taskId: data.taskId,
+          expectedVersion: data.version,
+          criteria: data.criteria.length
+            ? data.criteria
+            : ['Native workspace artifact is verified'],
+          analysis: {
+            summary: 'Deterministic analysis through the actual DSH tool',
+            plan: [
+              'Produce isolated artifact',
+              'Read back result',
+              'Report evidence',
+            ],
+            risk: 'low',
+            route: 'express',
+            questions: [],
+          },
+        })
     } else if (user.startsWith('Review dashboard task') && data) {
       if (!toolResults.length)
         block = call('bash', {
@@ -128,6 +138,9 @@ class SimulationAdapter extends LlmAdapter {
         block = call('bash', {
           command:
             'printf DSH_SIM_SHELL_OK > sim-shell.txt' +
+            (data?.description.includes('PERSE_IMAGE_EVIDENCE')
+              ? ` && python3 -c ${quote("import base64;open('proof.png','wb').write(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'))")}`
+              : '') +
             (data?.completionPolicy.checks ?? [])
               .filter((c) => c.kind === 'text-equals')
               .map(
@@ -143,6 +156,15 @@ class SimulationAdapter extends LlmAdapter {
           expectedVersion: Number(id[2]),
           evidence:
             'SIM: real DSH tool execution verified; deterministic model, no external inference.',
+          images: data?.description.includes('PERSE_IMAGE_EVIDENCE')
+            ? [
+                {
+                  path: 'proof.png',
+                  caption: 'Native image readback',
+                  criterion: 0,
+                },
+              ]
+            : [],
         })
     } else if (user.includes('dashboard_claim_next')) {
       const id = user.match(/taskId "([^"]+)"/)

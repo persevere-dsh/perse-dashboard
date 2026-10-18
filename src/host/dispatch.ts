@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { DispatchState, Task, DispatchRequest } from '../contract/types.ts'
 import { BoardController, BoardError } from './board.ts'
 import { analysisPrompt, taskPrompt } from './prompts.ts'
+import { runPhase } from './phases.ts'
 export { taskPrompt } from './prompts.ts'
 export interface DispatchRuntime {
   create(workspaceId: string): Promise<string>
@@ -17,6 +18,7 @@ export class Dispatcher {
     activeTaskId: null,
     activeSessionId: null,
     error: null,
+    errorTaskId: null,
     watch: false,
     processed: 0,
     maxTasks: 10,
@@ -68,6 +70,7 @@ export class Dispatcher {
       watch: options.watch ?? false,
       maxTasks,
       error: null,
+      errorTaskId: null,
     }
     this.changed()
     this.wake()
@@ -114,6 +117,9 @@ export class Dispatcher {
       while (this.state.enabled && !this.closed) {
         const task = this.pending(workspaceId)
         if (!task) break
+        this.state.activeTaskId = task.id
+        this.state.activeSessionId = null
+        this.changed()
         const analyzing = task.intake && !task.analysis
         const sessionId = analyzing
           ? await this.runtime.create(workspaceId)
@@ -145,12 +151,15 @@ export class Dispatcher {
           activeSessionId: sessionId,
         }
         this.changed()
-        await this.runtime.prompt(
+        await runPhase(
+          this.board,
+          this.runtime,
+          claimed,
           sessionId,
+          analyzing ? 'analysis' : 'execution',
           analyzing ? analysisPrompt(claimed) : taskPrompt(claimed),
-          randomUUID(),
+          () => this.closed,
         )
-        await this.runtime.idle(sessionId)
         if (this.closed) break
         const current = this.board
           .snapshot()
@@ -163,7 +172,7 @@ export class Dispatcher {
             current?.status === 'in-progress' &&
             current.sessionId === sessionId)
         ) {
-          await this.board.update({
+          const blocked = await this.board.update({
             requestId: randomUUID(),
             id: task.id,
             expectedVersion: current.version,
@@ -172,9 +181,11 @@ export class Dispatcher {
             evidence:
               'Agent stopped without the required phase report. Inspect its native DSH Session before retrying.',
           })
-          throw new BoardError(
-            'report-missing',
-            'Agent stopped without reporting evidence or analysis; dispatch paused',
+          // A task-local omission is visible on that task; later issues remain eligible.
+          await this.board.note(
+            task.id,
+            blocked.version,
+            'phase-report-missing',
           )
         }
         if (current?.status === 'in-review') await this.finish(current.id)
@@ -210,6 +221,7 @@ export class Dispatcher {
           this.state.error = `${message}; failed to persist blocked state: ${persistError instanceof Error ? persistError.message : String(persistError)}`
         }
       }
+      this.state.errorTaskId = this.state.activeTaskId
       this.state.error ??= message
       this.state.enabled = false
     } finally {

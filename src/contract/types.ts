@@ -49,6 +49,11 @@ export interface CompletionReceipt {
   checks: CriterionResult[]
   results: CriterionResult[]
 }
+export interface EvidenceImage {
+  path: string
+  caption: string
+  criterion?: number
+}
 export interface Task {
   id: string
   workspaceId: string
@@ -57,6 +62,7 @@ export interface Task {
   criteria: string[]
   checked: boolean[]
   evidence: string
+  images: EvidenceImage[]
   priority: number
   assignee: string | null
   sessionId: string | null
@@ -70,6 +76,7 @@ export interface Task {
   analysisSessionId: string | null
   analysis: Analysis | null
   reviewSessionId: string | null
+  reviewPromptHash: string | null
   review: Review | null
   completionPolicy: CompletionPolicy
   completion: CompletionReceipt | null
@@ -109,7 +116,9 @@ export interface UpdateRequest {
   requestId: string
   id: string
   expectedVersion: number
-  action: 'edit' | 'assign' | 'move' | 'archive' | 'restore' | 'accept'
+  action:
+    'edit' | 'assign' | 'move' | 'archive' | 'restore' | 'accept' | 'retry'
+  criteria?: string[]
   title?: string
   description?: string
   priority?: number
@@ -125,6 +134,7 @@ export interface AgentRequest {
   taskId?: string
   expectedVersion?: number
   evidence?: string
+  images?: EvidenceImage[]
   outcome?: 'review' | 'blocked'
 }
 export interface AnalysisReport {
@@ -156,6 +166,7 @@ export interface DispatchState {
   workspaceId: string | null
   activeTaskId: string | null
   activeSessionId: string | null
+  errorTaskId?: string | null
   error: string | null
   watch: boolean
   processed: number

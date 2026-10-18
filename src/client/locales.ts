@@ -1,4 +1,77 @@
 export const en = {
+  owner: 'Owner',
+  queueListening: 'Waiting for new eligible issues',
+  failedQueueTask: 'Inspect the task that paused this queue',
+  riskLow: 'Low risk',
+  riskMedium: 'Medium risk',
+  riskHigh: 'High risk',
+  routeExpress: 'Express',
+  routeStaged: 'Staged: human acceptance',
+  routeNeedsInfo: 'Needs clarification',
+  routeHuman: 'Human implementation',
+  nextSteps: 'Next steps',
+  openTask: 'View task',
+  nextArchived: 'Restore this task before continuing.',
+  nextDone: 'Completed with a recorded acceptance receipt.',
+  nextRunning:
+    'The linked Agent is working. Open its Session to follow progress.',
+  nextClarify:
+    'Answer the analysis questions in Properties, save, then Analyze issue again.',
+  nextBlocked:
+    'Inspect the phase Session and evidence. Retry returns unfinished work to the correct queue.',
+  nextInterrupted:
+    'The phase is unfinished but its Agent is idle. Inspect its Session, then recover the task. No execution is replayed automatically.',
+  nextAnalyze:
+    'Start the workspace queue or Analyze issue to generate a plan and acceptance criteria.',
+  nextQueued:
+    'The workspace queue will take this task within its remaining budget.',
+  nextStart:
+    'Analysis is ready. Start the workspace queue to claim and execute eligible tasks.',
+  nextHuman:
+    'Automatic completion is held by the gates below. Independent review can still collect evidence; check every criterion and accept explicitly when satisfied.',
+  nextVerify:
+    'Run verification. Passing every approved gate records completion automatically.',
+  nextReviewFailed:
+    'Independent review did not pass. Inspect each result, then recover for correction or explicitly accept after your own checks.',
+  gateManual: 'The owner selected manual acceptance.',
+  gateManualFlag: 'The owner requires manual validation.',
+  gateAnalysis: 'No analysis is available.',
+  gateStaged: 'The analysis route is staged or needs human judgment.',
+  gateRisk: 'Analysis risk is medium or high.',
+  gateCriteria: 'Acceptance criteria are missing.',
+  gateEvidence: 'Execution evidence is missing.',
+  gateChecks: 'Configure a machine check for every criterion.',
+  completionGates: 'Automatic completion gates',
+  autoEligible:
+    'Eligible: express + low risk + no manual flag. Verification must still pass.',
+  recoverTask: 'Recover task',
+  recoverHint:
+    'Recovery preserves evidence and audit history. Start the queue afterward.',
+  acceptRemaining: 'Check every criterion below before explicit acceptance.',
+  evidenceReport: 'Execution report',
+  editEvidence: 'Edit report',
+  criterionReview: 'Independent verification',
+  previewImage: 'Preview evidence image',
+  closeImage: 'Close image',
+  imageUnavailable: 'Image unavailable',
+  criteriaOptional: 'Acceptance criteria (optional)',
+  criteriaAutoHelp:
+    'Leave empty to let analysis generate verifiable criteria. You can edit them before execution.',
+  criteriaItems: 'Acceptance criteria',
+  addCriterion: 'Add criterion',
+  criterionText: 'Criterion',
+  removeCriterion: 'Remove criterion',
+  phaseMissingNote:
+    'The phase ended without its required report after one reminder. Inspect the Session and recover this task. Other tasks may continue.',
+  humanGateNote:
+    'Independent evidence is available, but owner acceptance is required by the task route, risk or manual policy.',
+  reviewFailedNote:
+    'Independent review did not verify every criterion without remaining risks.',
+  reviewMissingNote:
+    'The reviewer ended without a report after one reminder. Retry verification to start a fresh independent review.',
+  criteriaGenerated:
+    'Analysis-generated criteria can be adjusted in Properties before execution.',
+
   closePermissionSettings: 'Close permission settings',
   attention: 'Needs attention',
   attentionHelp:
@@ -181,6 +254,66 @@ export const en = {
 } as const
 export type Key = keyof typeof en
 export const zh: Record<Key, string> = {
+  owner: '所有者',
+  queueListening: '等待可处理的新议题',
+  failedQueueTask: '查看导致队列暂停的任务',
+  riskLow: '低风险',
+  riskMedium: '中风险',
+  riskHigh: '高风险',
+  routeExpress: '快速处理',
+  routeStaged: '分阶段，保留人工验收',
+  routeNeedsInfo: '需补充信息',
+  routeHuman: '需人工实施',
+  nextSteps: '接下来怎么做',
+  openTask: '查看任务',
+  nextArchived: '此任务已归档，恢复后才能继续。',
+  nextDone: '已完成，验收凭据已记录。',
+  nextRunning: '关联 Agent 正在运行，可打开会话查看进度。',
+  nextClarify: '在“属性”中补充问题答案并保存，再点击“分析议题”。',
+  nextBlocked: '查看阶段会话与阻塞原因；“恢复任务”会将未完成工作退回正确阶段。',
+  nextInterrupted:
+    '阶段尚未完成，但 Agent 已空闲。先查看会话，再恢复任务；系统不会静默重跑。',
+  nextAnalyze: '启动工作区队列，或点击“分析议题”生成计划和验收标准。',
+  nextQueued: '工作区队列会在剩余预算内处理此任务。',
+  nextStart: '分析已完成；启动工作区队列后即可认领和执行待处理任务。',
+  nextHuman:
+    '下列规则保留了人工验收。仍可运行独立复核收集证据；核对并勾选全部标准后，点击“验收并完成”。',
+  nextVerify: '运行验证；通过全部已批准规则后会自动记录为完成。',
+  nextReviewFailed:
+    '独立复核未通过。逐项查看结果，恢复任务进行修正，或自行核验后明确验收。',
+  gateManual: '完成策略为人工验收。',
+  gateManualFlag: '任务被标记为需要人工验证。',
+  gateAnalysis: '尚无分析结论。',
+  gateStaged: '分析路线不是快速处理，需要人工判断。',
+  gateRisk: '分析风险为中或高。',
+  gateCriteria: '缺少验收标准。',
+  gateEvidence: '缺少执行证据。',
+  gateChecks: '必须为每条验收标准配置机器检查。',
+  completionGates: '自动完成条件',
+  autoEligible: '符合快速、低风险、无需人工标记的条件；仍须通过全部验证。',
+  recoverTask: '恢复任务',
+  recoverHint: '恢复会保留证据和审计记录，随后可启动队列。',
+  acceptRemaining: '请逐项核对并勾选下方验收标准，再明确验收。',
+  evidenceReport: '执行报告',
+  editEvidence: '编辑报告',
+  criterionReview: '独立核验',
+  previewImage: '预览证据图片',
+  closeImage: '关闭图片',
+  imageUnavailable: '图片暂不可用',
+  criteriaOptional: '验收标准（可选）',
+  criteriaAutoHelp: '可留空，由分析 Agent 拆分为可验证标准；执行前可编辑。',
+  criteriaItems: '验收标准',
+  addCriterion: '添加标准',
+  criterionText: '标准',
+  removeCriterion: '移除标准',
+  phaseMissingNote:
+    '阶段在一次补报提醒后仍未提交报告。请查看会话并恢复此任务；其余任务可以继续。',
+  humanGateNote:
+    '独立核验已收集证据，但任务路线、风险或人工策略仍要求所有者验收。',
+  reviewFailedNote: '独立复核未能无保留地验证全部标准。',
+  reviewMissingNote: '复核者在一次提醒后仍未报告；重新验证可启动新的独立复核。',
+  criteriaGenerated: '分析生成的验收标准可在执行前通过“属性”调整。',
+
   closePermissionSettings: '关闭权限设置',
   attention: '需要你处理',
   attentionHelp:
@@ -332,7 +465,7 @@ export const zh: Record<Key, string> = {
   audit: '活动记录',
   move: '移动任务',
   unavailable: '会话不可用',
-  host: '当前 DSH Host',
+  host: '当前连接的 DSH',
   noSessions: '此工作区暂无会话',
   version: '版本',
   error: '操作失败',

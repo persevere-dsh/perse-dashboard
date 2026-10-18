@@ -15,10 +15,10 @@ assert.ok(!bundle.includes('node:fs'))
 assert.ok(!bundle.includes('setBypassCSP'))
 assert.equal(pkg.name, 'perse-dashboard')
 const remote = await import('../lib/typert.remote-client.js')
-assert.equal(remote.default.descriptors.length, 7)
+assert.equal(remote.default.descriptors.length, 8)
 assert.deepEqual(
   remote.default.descriptors.map((d) => d.name ?? d.method).sort(),
-  ['analyze', 'create', 'dispatch', 'snapshot', 'update', 'verify', 'watch'],
+  ['analyze', 'create', 'dispatch', 'image', 'snapshot', 'update', 'verify', 'watch'],
 )
 console.log('Package surface and generated Remote contract verified')
 

@@ -125,6 +125,7 @@ function App() {
     },
     [],
   )
+  const image = useCallback(command('image'), [])
   const props: any = {
     loadPermissions,
     savePermissionDefault,
@@ -157,6 +158,7 @@ function App() {
           })),
       ]),
     ),
+    image,
     create: command('create'),
     update: command('update'),
     dispatch: command('dispatch'),
