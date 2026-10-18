@@ -18,6 +18,6 @@ Prompt templates are versioned source in src/host/prompts.ts. Owner instructions
 
 ## Visible recovery and acceptance
 
-The next-steps panel lists queued, blocked, needs-info, stopped unfinished and review-held tasks with the actual next action. Recover task is an explicit owner command; it preserves report/audit history and clears the active claim. Start the queue afterward. Scope and generated criterion edits require a fresh analysis.
+The board retains one task list. Its attention count includes blocked, needs-info, stopped unfinished and review-held work; compact card status and task detail explain the next action. There is no additional task grid above the board. Recover task is an explicit owner command; it preserves report/audit history and clears the active claim. Start the queue afterward. Scope and generated criterion edits require a fresh analysis.
 
 Reviewed policy collects independent evidence even for staged work; staged/medium-risk/manual-marked tasks still require owner acceptance. A fully passed review may be reused while waiting for human acceptance; failed/partial/high-risk/missing reports and failed machine verification require fresh checks. The exact review prompt hash is retained for the completion receipt. Native pending approvals remain exclusively in DSH.

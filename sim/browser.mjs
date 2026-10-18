@@ -118,6 +118,8 @@ try {
   await board()
   await expect(page.getByText('正在连接 DSH…')).toHaveCount(0)
   check('native slot loads without DOM injection')
+  await expect(page.locator('.pd-next-steps,.pd-next-grid')).toHaveCount(0)
+  check('board has no duplicate next-step task grid')
   const created = await rpc('workspace/create', {
       request: { path: runtime.workspace, title: 'Dashboard simulation' },
     }),

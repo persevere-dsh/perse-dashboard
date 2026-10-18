@@ -10,7 +10,7 @@ DSH continues to own Agents, permissions, Sessions and idle semantics. BoardCont
 
 Owner retry is an atomic, versioned command through update. It returns unanalyzed work to triage and analyzed execution work to todo, preserving evidence and audit history while clearing current phase links. Live Agents prevent retry. A stopped unfinished phase after restart is shown as recoverable; restart never silently replays execution. Scope edits and criterion changes invalidate analysis and previous review. Needs-info may report with no criteria until requirements are supplied; executable routes require criteria.
 
-Review and completion are separate. Reviewed policy may obtain an independent review for staged work, while automatic completion remains restricted to express, low-risk, non-manual tasks with all existing gates. Human acceptance is explicit. A valid existing review is reused when resuming verification; a retry never replaces an active reviewer. UI guidance shows completion blockers, remaining checks and the precise next action.
+Review and completion are separate. Reviewed policy may obtain an independent review for staged work, while automatic completion remains restricted to express, low-risk, non-manual tasks with all existing gates. Human acceptance is explicit. A valid existing review is reused when resuming verification; a retry never replaces an active reviewer. Task details show completion blockers, remaining checks and the precise next action. The board keeps its existing task cards; it must not duplicate tasks in an additional instruction grid.
 
 ## Evidence
 

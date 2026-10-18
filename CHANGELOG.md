@@ -1,3 +1,7 @@
+# 1.4.1
+
+- Remove the duplicate next-step task grid above the board. Keep recovery reasons, completion gates and actions in task details; task cards retain their compact status.
+
 # 1.4.0
 
 - Recover reasoning-only and missing-report stops with one bounded reminder; isolate task-local failure and preserve infrastructure pause behavior.

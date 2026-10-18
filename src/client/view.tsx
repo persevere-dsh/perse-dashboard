@@ -532,25 +532,6 @@ export function Dashboard(props: Props) {
           </div>
         )}
       </section>
-      {actionable.length > 0 && (
-        <section className="pd-next-steps" aria-label={t('nextSteps')}>
-          <h2>
-            {t('nextSteps')}{' '}
-            <span className="pd-count">{actionable.length}</span>
-          </h2>
-          <div className="pd-next-grid">
-            {actionable.map((item) => (
-              <article key={item.id}>
-                <strong>{item.title}</strong>
-                <p>{t(nextStep(item, !!isRunning(item), queueFor(item)))}</p>
-                <button onClick={() => setSelected(item.id)}>
-                  {t('openTask')}
-                </button>
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
       <PermissionSettings
         t={t}
         loadPermissions={props.loadPermissions}
@@ -583,6 +564,9 @@ export function Dashboard(props: Props) {
                         className={`pd-card ${taskAttention(item).length ? 'is-attention' : ''}`}
                         key={item.id}
                         aria-pressed={selected === item.id}
+                        title={t(
+                          nextStep(item, !!isRunning(item), queueFor(item)),
+                        )}
                         onClick={() => setSelected(item.id)}
                       >
                         <span className="pd-card-meta">

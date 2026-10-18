@@ -1154,9 +1154,10 @@ try {
       await expect.poll(async () => (await task(bad.id)).status).toBe('blocked')
       await expect.poll(async () => (await task(good.id)).status).toBe('done')
       expect((await data()).snapshot.dispatch.error).toBeNull()
+      await expect(page.locator('.pd-next-steps,.pd-next-grid')).toHaveCount(0)
       await expect(
-        page.getByRole('region', { name: 'Next steps', exact: true }),
-      ).toContainText('Missing phase report')
+        page.locator('.pd-card').filter({ hasText: 'Missing phase report' }),
+      ).toContainText('Blocked')
       await openTask(bad.id)
       await expect(page.locator('.pd-next-detail')).toContainText(
         'Other tasks may continue',
