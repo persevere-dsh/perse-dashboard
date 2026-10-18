@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "captureOrigin": "Actual loopback DSH Gateway snapshot from isolated installed tarball; deterministic model only",
+  "runtimeVersion": "0.2.1-rc.2",
+  "sourceCommit": "2a1e5dee2b2fbdd134b64090c31f52fb854b4852",
+  "sourceDirty": true,
+  "runId": "20261018-170235-4f1d2c",
+  "syntheticModel": true,
+  "files": [
+    {
+      "path": "dsh-0.2.1-rc.2.json",
+      "sha256": "a7a99a6605e561fbee795790075b4f7e0ce223427daade91b1a5f93e1e1bdcf0",
+      "shape": "Parsed perseDashboard/snapshot response value"
+    }
+  ]
+}

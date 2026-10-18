@@ -24,3 +24,10 @@ class SimRunnerTest(unittest.TestCase):
   with tempfile.TemporaryDirectory() as tmp:
    code='import subprocess,sys; subprocess.Popen([sys.executable,"-c","import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);time.sleep(30)"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)'
    sim.command([sys.executable,'-c',code],pathlib.Path(tmp)/'descendant.log',os.environ.copy(),3)
+
+ def test_transient_group_probe_denial_is_not_mistaken_for_cleanup(self):
+  from unittest.mock import Mock,patch
+  child=Mock(pid=12345)
+  with patch.object(sim.os,'killpg',side_effect=[None,None,PermissionError(),ProcessLookupError()]) as probe:
+   self.assertTrue(sim.terminate(child))
+   self.assertEqual(probe.call_count,4)

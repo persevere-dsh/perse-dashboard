@@ -1,0 +1,307 @@
+{
+  "runtimeVersion": "0.2.1-rc.2",
+  "synthetic": true,
+  "snapshot": {
+    "revision": 16,
+    "tasks": [
+      {
+        "id": "44cfedfb-0465-41e6-b1b4-c93627abbe1f",
+        "workspaceId": "cced94d4-9a2a-4820-a215-620b939411b1",
+        "title": "Native DSH contract verification",
+        "description": "Exercise the native task tool contract and submit deterministic evidence. No external model inference is used in this lane.",
+        "criteria": [
+          "Native DSH tools return a verified evidence report"
+        ],
+        "checked": [
+          true
+        ],
+        "evidence": "SIM: real DSH tool execution verified; deterministic model, no external inference.",
+        "priority": 1,
+        "assignee": null,
+        "sessionId": "session-e5de0e92-6316-44a4-ab6a-898c37b3b2eb",
+        "status": "done",
+        "version": 5,
+        "archived": false,
+        "createdAt": 1792314161123,
+        "updatedAt": 1792314161589,
+        "intake": false,
+        "needsManual": false,
+        "analysisSessionId": null,
+        "analysis": null,
+        "reviewSessionId": null,
+        "review": null,
+        "completionPolicy": {
+          "mode": "manual",
+          "instructions": "",
+          "checks": []
+        },
+        "completion": {
+          "kind": "human",
+          "time": 1792314161589,
+          "ruleVersion": "completion/2",
+          "promptHash": "d726dc3e16d9e6de210ce0f3c46131315907f2c3b6af4cc999c3a514b3ac8b32",
+          "evidenceHash": "b014890eba734a95b2e67712c446b436386b69a0b73ab280299bd0a2edf2d291",
+          "reviewerSessionId": null,
+          "checks": [],
+          "results": [
+            {
+              "criterion": 0,
+              "passed": true,
+              "evidence": "Explicit owner acceptance"
+            }
+          ]
+        },
+        "automationNote": ""
+      },
+      {
+        "id": "1a96bc2d-3d66-46a6-bb24-27dd565a97d3",
+        "workspaceId": "cced94d4-9a2a-4820-a215-620b939411b1",
+        "title": "Agent pull contract",
+        "description": "Claim through actual DSH tool",
+        "criteria": [
+          "Actual agent claim and report"
+        ],
+        "checked": [
+          false
+        ],
+        "evidence": "SIM: task claimed and reported through official DSH Agent tools.",
+        "priority": 2,
+        "assignee": null,
+        "sessionId": "session-0a19c25b-47c1-455f-b0dc-9e72976d6bd7",
+        "status": "in-review",
+        "version": 3,
+        "archived": false,
+        "createdAt": 1792314161708,
+        "updatedAt": 1792314161808,
+        "intake": false,
+        "needsManual": false,
+        "analysisSessionId": null,
+        "analysis": null,
+        "reviewSessionId": null,
+        "review": null,
+        "completionPolicy": {
+          "mode": "manual",
+          "instructions": "",
+          "checks": []
+        },
+        "completion": null,
+        "automationNote": ""
+      },
+      {
+        "id": "a522cdeb-a91f-42a1-9dc1-1e651e8c8aca",
+        "workspaceId": "cced94d4-9a2a-4820-a215-620b939411b1",
+        "title": "Automatic native intake and independent review",
+        "description": "Write auto-result.txt containing exactly DSH_AUTO_NATIVE_OK and verify it.",
+        "criteria": [
+          "auto-result.txt contains exactly DSH_AUTO_NATIVE_OK"
+        ],
+        "checked": [
+          true
+        ],
+        "evidence": "SIM: real DSH tool execution verified; deterministic model, no external inference.",
+        "priority": 1,
+        "assignee": null,
+        "sessionId": "session-80552ccc-88a7-41bd-91a5-a7a751102f70",
+        "status": "done",
+        "version": 8,
+        "archived": false,
+        "createdAt": 1792314161971,
+        "updatedAt": 1792314162365,
+        "intake": true,
+        "needsManual": false,
+        "analysisSessionId": "session-1a80e1fa-c4c1-4fde-b880-b4e4083ce324",
+        "analysis": {
+          "summary": "Deterministic analysis through the actual DSH tool",
+          "plan": [
+            "Produce isolated artifact",
+            "Read back result",
+            "Report evidence"
+          ],
+          "risk": "low",
+          "route": "express",
+          "questions": []
+        },
+        "reviewSessionId": "session-5c26d7b2-69eb-4278-9168-a7390bf3a408",
+        "review": {
+          "verdict": "pass",
+          "risk": "low",
+          "results": [
+            {
+              "criterion": 0,
+              "passed": true,
+              "evidence": "Actual native shell readback: [{\"type\":\"text\",\"text\":\"DSH_AUTO_NATIVE_OK\"}]"
+            }
+          ],
+          "remainingRisks": [],
+          "evidence": "Independent native DSH Session read the workspace artifact using its actual bash tool."
+        },
+        "completionPolicy": {
+          "mode": "reviewed",
+          "instructions": "Inspect the actual file using a native workspace tool. Only pass if its exact content matches the approved expected value; unavailable checks must fail.",
+          "checks": [
+            {
+              "criterion": 0,
+              "path": "auto-result.txt",
+              "kind": "text-equals",
+              "expected": "DSH_AUTO_NATIVE_OK"
+            }
+          ]
+        },
+        "completion": {
+          "kind": "reviewed",
+          "time": 1792314162365,
+          "ruleVersion": "completion/2",
+          "promptHash": "70bed642977ae595a5208919d3e346268d1932846e85f515f620c8fde90828bd",
+          "evidenceHash": "b014890eba734a95b2e67712c446b436386b69a0b73ab280299bd0a2edf2d291",
+          "reviewerSessionId": "session-5c26d7b2-69eb-4278-9168-a7390bf3a408",
+          "checks": [
+            {
+              "criterion": 0,
+              "passed": true,
+              "evidence": "text-equals: auto-result.txt; 18 bytes; sha256 514c5c7254ef4ef51dac69d08c53741d78c4a5d6c01ec37b67ca3e02bfdc4e40"
+            }
+          ],
+          "results": [
+            {
+              "criterion": 0,
+              "passed": true,
+              "evidence": "Actual native shell readback: [{\"type\":\"text\",\"text\":\"DSH_AUTO_NATIVE_OK\"}]"
+            }
+          ]
+        },
+        "automationNote": ""
+      }
+    ],
+    "ledger": [
+      {
+        "seq": 1,
+        "taskId": "44cfedfb-0465-41e6-b1b4-c93627abbe1f",
+        "action": "create",
+        "actor": "human",
+        "time": 1792314161123
+      },
+      {
+        "seq": 2,
+        "taskId": "44cfedfb-0465-41e6-b1b4-c93627abbe1f",
+        "action": "claim",
+        "actor": "session-e5de0e92-6316-44a4-ab6a-898c37b3b2eb",
+        "time": 1792314161353
+      },
+      {
+        "seq": 3,
+        "taskId": "44cfedfb-0465-41e6-b1b4-c93627abbe1f",
+        "action": "report",
+        "actor": "session-e5de0e92-6316-44a4-ab6a-898c37b3b2eb",
+        "time": 1792314161436
+      },
+      {
+        "seq": 4,
+        "taskId": "44cfedfb-0465-41e6-b1b4-c93627abbe1f",
+        "action": "edit",
+        "actor": "human",
+        "time": 1792314161538
+      },
+      {
+        "seq": 5,
+        "taskId": "44cfedfb-0465-41e6-b1b4-c93627abbe1f",
+        "action": "accept",
+        "actor": "human",
+        "time": 1792314161589
+      },
+      {
+        "seq": 6,
+        "taskId": "1a96bc2d-3d66-46a6-bb24-27dd565a97d3",
+        "action": "create",
+        "actor": "human",
+        "time": 1792314161708
+      },
+      {
+        "seq": 7,
+        "taskId": "1a96bc2d-3d66-46a6-bb24-27dd565a97d3",
+        "action": "claim",
+        "actor": "session-0a19c25b-47c1-455f-b0dc-9e72976d6bd7",
+        "time": 1792314161784
+      },
+      {
+        "seq": 8,
+        "taskId": "1a96bc2d-3d66-46a6-bb24-27dd565a97d3",
+        "action": "report",
+        "actor": "session-0a19c25b-47c1-455f-b0dc-9e72976d6bd7",
+        "time": 1792314161808
+      },
+      {
+        "seq": 9,
+        "taskId": "a522cdeb-a91f-42a1-9dc1-1e651e8c8aca",
+        "action": "create",
+        "actor": "human",
+        "time": 1792314161971
+      },
+      {
+        "seq": 10,
+        "taskId": "a522cdeb-a91f-42a1-9dc1-1e651e8c8aca",
+        "action": "analysis-start",
+        "actor": "session-1a80e1fa-c4c1-4fde-b880-b4e4083ce324",
+        "time": 1792314162053
+      },
+      {
+        "seq": 11,
+        "taskId": "a522cdeb-a91f-42a1-9dc1-1e651e8c8aca",
+        "action": "analysis-report",
+        "actor": "session-1a80e1fa-c4c1-4fde-b880-b4e4083ce324",
+        "time": 1792314162107
+      },
+      {
+        "seq": 12,
+        "taskId": "a522cdeb-a91f-42a1-9dc1-1e651e8c8aca",
+        "action": "claim",
+        "actor": "session-80552ccc-88a7-41bd-91a5-a7a751102f70",
+        "time": 1792314162144
+      },
+      {
+        "seq": 13,
+        "taskId": "a522cdeb-a91f-42a1-9dc1-1e651e8c8aca",
+        "action": "report",
+        "actor": "session-80552ccc-88a7-41bd-91a5-a7a751102f70",
+        "time": 1792314162225
+      },
+      {
+        "seq": 14,
+        "taskId": "a522cdeb-a91f-42a1-9dc1-1e651e8c8aca",
+        "action": "review-start",
+        "actor": "session-5c26d7b2-69eb-4278-9168-a7390bf3a408",
+        "time": 1792314162265
+      },
+      {
+        "seq": 15,
+        "taskId": "a522cdeb-a91f-42a1-9dc1-1e651e8c8aca",
+        "action": "review-report",
+        "actor": "session-5c26d7b2-69eb-4278-9168-a7390bf3a408",
+        "time": 1792314162344
+      },
+      {
+        "seq": 16,
+        "taskId": "a522cdeb-a91f-42a1-9dc1-1e651e8c8aca",
+        "action": "auto-complete",
+        "actor": "automation",
+        "time": 1792314162365
+      }
+    ],
+    "dispatch": {
+      "enabled": false,
+      "workspaceId": "cced94d4-9a2a-4820-a215-620b939411b1",
+      "activeTaskId": null,
+      "activeSessionId": null,
+      "error": null,
+      "watch": true,
+      "processed": 1,
+      "maxTasks": 10
+    },
+    "capabilities": {
+      "create": true,
+      "update": true,
+      "dispatch": true,
+      "analyze": true,
+      "verify": true
+    }
+  }
+}

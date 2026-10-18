@@ -1,5 +1,5 @@
 /** Pure components: only framework-provided hooks and injected commands. */
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {
   PropsRuntime,
@@ -16,10 +16,19 @@ import type {
 } from '../contract/types.ts'
 import type { createDashboardStore } from './store.ts'
 import type { Key } from './locales.ts'
+import { CompletionEditor } from './completion-editor.tsx'
+import { validSnapshot } from './validation.ts'
+import type {
+  CompletionPolicy,
+  TaskCommand,
+  DashboardSnapshot,
+} from '../contract/types.ts'
 export interface Injected {
   create(r: CreateRequest): Promise<Task>
   update(r: UpdateRequest): Promise<Task>
   dispatch(r: DispatchRequest): Promise<DispatchState>
+  analyze(r: TaskCommand): Promise<Task>
+  verify(r: TaskCommand): Promise<Task>
   openSession(id: string): void
   handoff(ws: string, id: string): void
   t: TranslateNS<'perse-dashboard'>
@@ -28,6 +37,8 @@ type Props = PropsRuntime<'main'> &
   PropsStore<ReturnType<typeof createDashboardStore>> &
   Injected
 const statuses: TaskStatus[] = [
+  'triage',
+  'needs-info',
   'todo',
   'in-progress',
   'blocked',
@@ -67,10 +78,24 @@ export function Dashboard(props: Props) {
     props.actions
   const [creating, setCreating] = useState(false),
     [error, setError] = useState(''),
-    [busy, setBusy] = useState(false)
-  const snapshot = resource.value,
+    [busy, setBusy] = useState(false),
+    [budget, setBudget] = useState(10)
+  const lastGood = useRef<DashboardSnapshot>()
+  const invalid = resource.value !== undefined && !validSnapshot(resource.value)
+  if (validSnapshot(resource.value)) lastGood.current = resource.value
+  const snapshot = lastGood.current,
+    commandsAvailable =
+      !invalid &&
+      resource.status !== 'failed' &&
+      resource.status !== 'loading' &&
+      snapshot?.capabilities?.update !== false,
     workspaces = workspaceState.items,
     workspace = workspaces.find((w) => w.workspaceId === workspaceId)
+  const phaseSessions = new Set(
+    snapshot?.tasks
+      .flatMap((t) => [t.analysisSessionId, t.reviewSessionId])
+      .filter(Boolean),
+  )
   const sessions = sessionState.ids
     .map((id) => sessionState.byId[id])
     .filter((s) => !workspace || workspace.sessionIds.includes(s.id))
@@ -90,6 +115,14 @@ export function Dashboard(props: Props) {
     const u = s.projectionValues?.tokenUsage
     return sum + (u ? Object.values(u).reduce((a, b) => a + b, 0) : 0)
   }, 0)
+  const linkedRunning =
+    !!task &&
+    [task.sessionId, task.analysisSessionId, task.reviewSessionId].some(
+      (id) =>
+        id &&
+        (agentState.get(id as never)?.running ??
+          sessionState.byId[id as never]?.running),
+    )
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true)
     setError('')
@@ -105,14 +138,15 @@ export function Dashboard(props: Props) {
     task: Task,
     change: Omit<UpdateRequest, 'id' | 'requestId' | 'expectedVersion'>,
   ) =>
-    act(() =>
-      props.update({
+    act(() => {
+      if (!commandsAvailable) throw new Error(t('partial'))
+      return props.update({
         ...change,
         id: task.id,
         expectedVersion: task.version,
         requestId: crypto.randomUUID(),
-      }),
-    )
+      })
+    })
   return (
     <main className="perse-dashboard" aria-label={t('nav')}>
       <header className="pd-header">
@@ -124,7 +158,7 @@ export function Dashboard(props: Props) {
         <button
           className="pd-primary"
           onClick={() => setCreating((v) => !v)}
-          disabled={!workspaces.length}
+          disabled={!workspaces.length || !commandsAvailable}
         >
           {t('newTask')}
         </button>
@@ -142,12 +176,22 @@ export function Dashboard(props: Props) {
           </div>
         ))}
       </div>
-      {(resource.status === 'loading' || !snapshot) && (
+      {resource.status === 'loading' && !snapshot && !invalid && (
         <p role="status">{t('loading')}</p>
       )}
       {resource.status === 'failed' && (
         <div role="alert" className="pd-banner">
           {t('failed')}
+        </div>
+      )}
+      {invalid && (
+        <div role="alert" className="pd-banner">
+          {t('incompatible')}
+        </div>
+      )}
+      {snapshot?.capabilities?.update === false && (
+        <div role="status" className="pd-banner">
+          {t('partial')}
         </div>
       )}
       {error && (
@@ -202,7 +246,7 @@ export function Dashboard(props: Props) {
         <div className="pd-toolbar">
           <button
             title={t('autoHint')}
-            disabled={busy}
+            disabled={busy || !commandsAvailable}
             onClick={() =>
               act(() =>
                 props.dispatch({
@@ -217,12 +261,54 @@ export function Dashboard(props: Props) {
           <span className="pd-muted">{t('autoHint')}</span>
         </div>
       )}
+      {workspace && (
+        <div className="pd-toolbar">
+          <label>
+            {t('budget')}{' '}
+            <input
+              aria-label={t('budget')}
+              type="number"
+              min={1}
+              max={100}
+              value={budget}
+              onChange={(e) => setBudget(Number(e.target.value))}
+            />
+          </label>
+          <button
+            disabled={busy || !commandsAvailable}
+            onClick={() =>
+              act(() =>
+                props.dispatch({
+                  workspaceId: workspace.workspaceId,
+                  enabled: !(
+                    snapshot?.dispatch.enabled && snapshot.dispatch.watch
+                  ),
+                  watch: true,
+                  maxTasks: budget,
+                }),
+              )
+            }
+          >
+            {t(
+              snapshot?.dispatch.enabled && snapshot.dispatch.watch
+                ? 'pauseWatch'
+                : 'watch',
+            )}
+          </button>
+          <span className="pd-muted">
+            {t('pipelineHelp')} {snapshot?.dispatch.processed ?? 0}/
+            {snapshot?.dispatch.maxTasks ?? budget}
+          </span>
+        </div>
+      )}
       {creating && (
         <CreateForm
           key={workspaceId}
           t={t}
           workspaces={workspaces}
-          sessions={sessionState.ids.map((id) => sessionState.byId[id])}
+          sessions={sessionState.ids
+            .filter((id) => !phaseSessions.has(id))
+            .map((id) => sessionState.byId[id])}
           selectedWorkspace={workspaceId}
           busy={busy}
           close={() => setCreating(false)}
@@ -307,26 +393,99 @@ export function Dashboard(props: Props) {
                 </button>
               </div>
               <h2>{task.title}</h2>
-              {task.status === 'todo' && !task.archived && (
-                <TaskEditor
-                  key={`${task.id}:${task.version}`}
-                  task={task}
-                  t={t}
-                  busy={busy}
-                  save={(change) =>
-                    mutation(task, { action: 'edit', ...change })
-                  }
-                />
+              {task.completion && (
+                <p className="pd-badge">
+                  {t('completionRecord')}:{' '}
+                  {task.completion.kind === 'human'
+                    ? t('manual')
+                    : t('automaticDone')}{' '}
+                  · {task.completion.ruleVersion}
+                </p>
               )}
+              {task.completionPolicy && (
+                <details className="pd-policy">
+                  <summary>
+                    {t('completionMode')}: {t(task.completionPolicy.mode)}
+                  </summary>
+                  <p className="pd-muted">{t('completionHelp')}</p>
+                  <h3>{t('completionInstructions')}</h3>
+                  <pre>{task.completionPolicy.instructions || '—'}</pre>
+                  <h3>{t('machineChecks')}</h3>
+                  {task.completionPolicy.checks.map((c, i) => (
+                    <div key={i}>
+                      <p>
+                        {c.criterion + 1}. {c.path} · {c.kind}
+                      </p>
+                      <pre>{c.expected}</pre>
+                    </div>
+                  ))}
+                  {task.completion?.checks?.map((r, i) => (
+                    <p key={i}>
+                      {r.criterion + 1}. {r.passed ? '✓' : '✗'} {r.evidence}
+                    </p>
+                  ))}
+                </details>
+              )}
+              {task.analysis && (
+                <section aria-label={t('analysis')}>
+                  <h3>{t('analysis')}</h3>
+                  <p>{task.analysis.summary}</p>
+                  <p>
+                    {task.analysis.risk} · {task.analysis.route}
+                  </p>
+                  <ol>
+                    {task.analysis.plan.map((step, i) => (
+                      <li key={i}>{step}</li>
+                    ))}
+                  </ol>
+                  {task.analysis.questions.map((q, i) => (
+                    <p key={i}>{q}</p>
+                  ))}
+                </section>
+              )}
+              {task.automationNote && (
+                <div role="status" className="pd-banner">
+                  {task.automationNote}
+                </div>
+              )}
+              {task.review && (
+                <section aria-label={t('reviewResult')}>
+                  <h3>
+                    {t('reviewResult')}: {task.review.verdict}
+                  </h3>
+                  <p>{task.review.evidence}</p>
+                  {task.review.results.map((r, i) => (
+                    <p key={i}>
+                      {r.criterion + 1}. {r.passed ? '✓' : '✗'} {r.evidence}
+                    </p>
+                  ))}
+                </section>
+              )}
+
+              {['todo', 'triage', 'needs-info'].includes(task.status) &&
+                !task.archived && (
+                  <TaskEditor
+                    key={`editor:${task.id}:${task.version}`}
+                    task={task}
+                    t={t}
+                    busy={busy || linkedRunning || !commandsAvailable}
+                    save={(change) =>
+                      mutation(task, { action: 'edit', ...change })
+                    }
+                  />
+                )}
               <p className="pd-muted" style={{ whiteSpace: 'pre-wrap' }}>
                 {task.description}
               </p>
               <label className="pd-field">
                 {t('assignee')}
                 <select
+                  aria-label={t('assignee')}
                   value={task.assignee ?? ''}
                   disabled={
                     busy ||
+                    linkedRunning ||
+                    !commandsAvailable ||
                     task.archived ||
                     task.status === 'in-progress' ||
                     task.status === 'done'
@@ -340,6 +499,7 @@ export function Dashboard(props: Props) {
                 >
                   <option value="">{t('queue')}</option>
                   {sessionState.ids
+                    .filter((id) => !phaseSessions.has(id))
                     .map((id) => sessionState.byId[id])
                     .filter((s) =>
                       workspaces
@@ -360,7 +520,11 @@ export function Dashboard(props: Props) {
                     type="checkbox"
                     checked={task.checked[i]}
                     disabled={
-                      busy || task.archived || task.status !== 'in-review'
+                      busy ||
+                      linkedRunning ||
+                      !commandsAvailable ||
+                      task.archived ||
+                      task.status !== 'in-review'
                     }
                     onChange={(e) =>
                       mutation(task, {
@@ -375,10 +539,10 @@ export function Dashboard(props: Props) {
                 </label>
               ))}
               <Evidence
-                key={`${task.id}:${task.version}`}
+                key={`evidence:${task.id}:${task.version}`}
                 task={task}
                 t={t}
-                busy={busy}
+                busy={busy || linkedRunning || !commandsAvailable}
                 save={(evidence) =>
                   mutation(task, { action: 'edit', evidence })
                 }
@@ -387,7 +551,13 @@ export function Dashboard(props: Props) {
                 {t('move')}
                 <select
                   value={task.status}
-                  disabled={busy || task.archived || task.status === 'done'}
+                  disabled={
+                    busy ||
+                    linkedRunning ||
+                    !commandsAvailable ||
+                    task.archived ||
+                    task.status === 'done'
+                  }
                   onChange={(e) =>
                     mutation(task, {
                       action: 'move',
@@ -396,16 +566,81 @@ export function Dashboard(props: Props) {
                   }
                 >
                   {statuses.map((s) => (
-                    <option key={s} value={s} disabled={s === 'done'}>
+                    <option
+                      key={s}
+                      value={s}
+                      disabled={s === 'done' || s === 'in-progress'}
+                    >
                       {t(s)}
                     </option>
                   ))}
                 </select>
               </label>
               <div className="pd-actions">
+                {['todo', 'triage', 'needs-info', 'blocked'].includes(
+                  task.status,
+                ) && (
+                  <button
+                    disabled={
+                      busy ||
+                      linkedRunning ||
+                      task.archived ||
+                      !commandsAvailable ||
+                      !!(
+                        task.analysisSessionId &&
+                        agentState.get(task.analysisSessionId as never)?.running
+                      )
+                    }
+                    onClick={() =>
+                      act(() =>
+                        props.analyze({
+                          id: task.id,
+                          expectedVersion: task.version,
+                          requestId: crypto.randomUUID(),
+                        }),
+                      )
+                    }
+                  >
+                    {t('analyze')}
+                  </button>
+                )}
+                {task.status === 'in-review' &&
+                  task.completionPolicy?.mode !== 'manual' && (
+                    <button
+                      disabled={busy || task.archived || !commandsAvailable}
+                      onClick={() =>
+                        act(() =>
+                          props.verify({
+                            id: task.id,
+                            expectedVersion: task.version,
+                            requestId: crypto.randomUUID(),
+                          }),
+                        )
+                      }
+                    >
+                      {t('verify')}
+                    </button>
+                  )}
+                {task.analysisSessionId && (
+                  <button
+                    onClick={() => props.openSession(task.analysisSessionId!)}
+                  >
+                    {t('openAnalysis')}
+                  </button>
+                )}
+                {task.reviewSessionId && (
+                  <button
+                    onClick={() => props.openSession(task.reviewSessionId!)}
+                  >
+                    {t('openReview')}
+                  </button>
+                )}
+
                 <button
                   disabled={
                     busy ||
+                    linkedRunning ||
+                    !commandsAvailable ||
                     task.archived ||
                     task.status !== 'todo' ||
                     !!task.assignee
@@ -441,7 +676,7 @@ export function Dashboard(props: Props) {
                 )}
                 {task.status === 'done' && !task.archived && (
                   <button
-                    disabled={busy}
+                    disabled={busy || linkedRunning || !commandsAvailable}
                     onClick={() =>
                       mutation(task, { action: 'move', status: 'todo' })
                     }
@@ -450,7 +685,12 @@ export function Dashboard(props: Props) {
                   </button>
                 )}
                 <button
-                  disabled={busy || task.status === 'in-progress'}
+                  disabled={
+                    busy ||
+                    linkedRunning ||
+                    !commandsAvailable ||
+                    task.status === 'in-progress'
+                  }
                   onClick={() =>
                     mutation(task, {
                       action: task.archived ? 'restore' : 'archive',
@@ -521,6 +761,9 @@ export function Dashboard(props: Props) {
               })}
           </tbody>
         </table>
+      )}
+      {snapshot && !tasks.length && (
+        <p className="pd-empty">{t(query ? 'filteredEmpty' : 'empty')}</p>
       )}
       {!workspaces.length && <p className="pd-empty">{t('noWorkspace')}</p>}
       <footer className="pd-footer">
@@ -597,7 +840,14 @@ function CreateForm({
     [description, setDescription] = useState(''),
     [criteria, setCriteria] = useState(''),
     [priority, setPriority] = useState(1),
-    [assignee, setAssignee] = useState('')
+    [assignee, setAssignee] = useState(''),
+    [intake, setIntake] = useState(true),
+    [needsManual, setNeedsManual] = useState(false),
+    [completionPolicy, setCompletionPolicy] = useState<CompletionPolicy>({
+      mode: 'reviewed',
+      instructions: '',
+      checks: [],
+    })
   return (
     <form
       className="pd-create"
@@ -614,6 +864,9 @@ function CreateForm({
             .filter(Boolean),
           priority,
           assignee: assignee || null,
+          intake,
+          needsManual,
+          completionPolicy,
         })
       }}
     >
@@ -655,7 +908,7 @@ function CreateForm({
       <label className="pd-field">
         {t('criteria')}
         <textarea
-          required
+          required={!intake}
           value={criteria}
           onChange={(e) => setCriteria(e.target.value)}
         />
@@ -690,10 +943,33 @@ function CreateForm({
             ))}
         </select>
       </label>
+      <label className="pd-check">
+        <input
+          type="checkbox"
+          checked={intake}
+          onChange={(e) => setIntake(e.target.checked)}
+        />
+        {t('intake')}
+      </label>
+      <p className="pd-muted">{t('noCriteria')}</p>
+      <label className="pd-check">
+        <input
+          type="checkbox"
+          checked={needsManual}
+          onChange={(e) => setNeedsManual(e.target.checked)}
+        />
+        {t('manualFlag')}
+      </label>
+      <CompletionEditor
+        value={completionPolicy}
+        change={setCompletionPolicy}
+        t={t}
+        disabled={busy}
+      />
       <div className="pd-actions">
         <button
           className="pd-primary"
-          disabled={busy || !title.trim() || !criteria.trim()}
+          disabled={busy || !title.trim() || (!intake && !criteria.trim())}
         >
           {t('create')}
         </button>
@@ -718,11 +994,17 @@ function TaskEditor({
     title: string
     description: string
     priority: number
+    completionPolicy: CompletionPolicy
+    needsManual: boolean
   }) => void
 }) {
   const [title, setTitle] = useState(task.title),
     [description, setDescription] = useState(task.description),
-    [priority, setPriority] = useState(task.priority)
+    [priority, setPriority] = useState(task.priority),
+    [completionPolicy, setCompletionPolicy] = useState(
+      task.completionPolicy ?? { mode: 'manual', instructions: '', checks: [] },
+    ),
+    [needsManual, setNeedsManual] = useState(task.needsManual ?? false)
   return (
     <details>
       <summary>{t('edit')}</summary>
@@ -755,15 +1037,34 @@ function TaskEditor({
           ))}
         </select>
       </label>
+      <label className="pd-check">
+        <input
+          type="checkbox"
+          checked={needsManual}
+          onChange={(e) => setNeedsManual(e.target.checked)}
+        />
+        {t('manualFlag')}
+      </label>
+      <CompletionEditor
+        value={completionPolicy}
+        change={setCompletionPolicy}
+        t={t}
+        disabled={busy}
+      />
       <button
         disabled={
           busy ||
           !title.trim() ||
           (title === task.title &&
             description === task.description &&
-            priority === task.priority)
+            priority === task.priority &&
+            JSON.stringify(completionPolicy) ===
+              JSON.stringify(task.completionPolicy) &&
+            needsManual === task.needsManual)
         }
-        onClick={() => save({ title, description, priority })}
+        onClick={() =>
+          save({ title, description, priority, completionPolicy, needsManual })
+        }
       >
         {t('save')}
       </button>

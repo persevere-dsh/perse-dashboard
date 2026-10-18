@@ -18,7 +18,9 @@ import {
   defaultEnvironment,
   BoardError,
 } from './host/board.ts'
-import { Dispatcher } from './host/dispatch.ts'
+import { Dispatcher, type DispatchRuntime } from './host/dispatch.ts'
+import { CompletionCoordinator } from './host/completion.ts'
+import { analysisPrompt } from './host/prompts.ts'
 import type {
   CreateRequest,
   UpdateRequest,
@@ -26,6 +28,7 @@ import type {
   DispatchRequest,
   DispatchState,
   Task,
+  TaskCommand,
 } from './contract/types.ts'
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -49,6 +52,9 @@ const spec = defineDomain({
 export class DashboardService extends TypertRemoteService {
   private board!: BoardController
   private dispatcher!: Dispatcher
+  private completion!: CompletionCoordinator
+  private runtime!: DispatchRuntime
+  private stopped = false
   private listeners = new Set<() => void>()
   constructor(ctx: Context) {
     super(ctx, 'perseDashboard')
@@ -67,36 +73,52 @@ export class DashboardService extends TypertRemoteService {
       for (const fn of this.listeners) fn()
     }
     this.board.subscribe(notify)
-    this.dispatcher = new Dispatcher(
-      this.board,
-      {
-        create: async (workspaceId) =>
-          (
-            await this.ctx.sessionController.create({
-              workspaceId: workspaceId as never,
-              sessionId: `session-${crypto.randomUUID()}` as never,
-            })
-          ).sessionId,
-        prompt: async (sessionId, text, requestId) => {
-          await this.ctx.sessionController.prompt(
-            {
-              sessionId: sessionId as never,
-              requestId: requestId as never,
-              mode: 'queue',
-              content: [{ type: 'text', text }],
-            },
-            new AbortController().signal,
-          )
-        },
-        idle: async (sessionId) => {
-          const agent = this.ctx.agents.get(sessionId as never)
-          if (!agent) throw new Error('DSH Agent is unavailable')
-          await agent.whenIdle()
-        },
-        running: (sessionId) =>
-          this.ctx.agents.get(sessionId as never)?.status === 'running',
+    this.runtime = {
+      create: async (workspaceId) =>
+        (
+          await this.ctx.sessionController.create({
+            workspaceId: workspaceId as never,
+            sessionId: `session-${crypto.randomUUID()}` as never,
+          })
+        ).sessionId,
+      prompt: async (sessionId, text, requestId) => {
+        await this.ctx.sessionController.prompt(
+          {
+            sessionId: sessionId as never,
+            requestId: requestId as never,
+            mode: 'queue',
+            content: [{ type: 'text', text }],
+          },
+          new AbortController().signal,
+        )
       },
-      notify,
+      idle: async (sessionId) => {
+        const agent = this.ctx.agents.get(sessionId as never)
+        if (!agent) throw new Error('DSH Agent is unavailable')
+        await agent.whenIdle()
+      },
+      running: (sessionId) =>
+        this.ctx.agents.get(sessionId as never)?.status === 'running',
+    }
+    this.completion = new CompletionCoordinator(
+      this.board,
+      this.runtime,
+      (id) => {
+        const ws = this.ctx.workspaceRegistry.get(id as never)
+        if (!ws) throw new Error('Workspace unavailable')
+        return ws.path
+      },
+    )
+    this.dispatcher = new Dispatcher(this.board, this.runtime, notify, (id) =>
+      this.completion.finish(id),
+    )
+    this.ctx.on('agent/status', () => this.dispatcher.wake())
+    this.ctx.effect(
+      () => () => {
+        this.stopped = true
+        this.completion.close()
+      },
+      'dashboard completion',
     )
     this.ctx.effect(
       () => () => this.dispatcher.close(),
@@ -133,7 +155,17 @@ export class DashboardService extends TypertRemoteService {
   async snapshot(): Promise<DashboardSnapshot> {
     this.owner()
     const { receipts, ...snapshot } = this.board.snapshot()
-    return { ...snapshot, dispatch: this.dispatcher.snapshot() }
+    return {
+      ...snapshot,
+      dispatch: this.dispatcher.snapshot(),
+      capabilities: {
+        create: true,
+        update: true,
+        dispatch: true,
+        analyze: true,
+        verify: true,
+      },
+    }
   }
   @Remote
   async create(request: CreateRequest): Promise<Task> {
@@ -146,8 +178,11 @@ export class DashboardService extends TypertRemoteService {
         .snapshot()
         .tasks.find((t) => t.id === request.id)
       if (
-        current?.sessionId &&
-        this.ctx.agents.get(current.sessionId as never)?.status === 'running' &&
+        [
+          current?.sessionId,
+          current?.analysisSessionId,
+          current?.reviewSessionId,
+        ].some((id) => id && this.runtime.running(id)) &&
         ['move', 'accept', 'archive', 'assign', 'edit'].includes(request.action)
       )
         throw new BoardError(
@@ -162,7 +197,82 @@ export class DashboardService extends TypertRemoteService {
     return this.protect(async () => {
       if (!this.ctx.workspaceRegistry.get(request.workspaceId as never))
         throw new BoardError('workspace-missing', 'Workspace is unavailable')
-      return this.dispatcher.configure(request.workspaceId, request.enabled)
+      return this.dispatcher.configure(
+        request.workspaceId,
+        request.enabled,
+        request,
+      )
+    })
+  }
+  @Remote
+  async analyze(request: TaskCommand): Promise<Task> {
+    return this.protect(async () => {
+      const old = this.board.snapshot().tasks.find((t) => t.id === request.id)
+      if (!old || old.version !== request.expectedVersion)
+        throw new BoardError('conflict', 'Issue changed')
+      if (
+        [old.sessionId, old.analysisSessionId, old.reviewSessionId].some(
+          (id) => id && this.runtime.running(id),
+        )
+      )
+        throw new BoardError('busy', 'Stop the linked Agent before reanalyzing')
+      const prepared = await this.board.update({
+        ...request,
+        action: 'move',
+        status: 'triage',
+      })
+      const id = await this.runtime.create(prepared.workspaceId)
+      const task = await this.board.beginAnalysis(
+        id,
+        prepared.id,
+        prepared.version,
+      )
+      try {
+        await this.runtime.prompt(id, analysisPrompt(task), crypto.randomUUID())
+      } catch (error) {
+        await this.board.update({
+          requestId: crypto.randomUUID(),
+          id: task.id,
+          expectedVersion: task.version,
+          action: 'move',
+          status: 'blocked',
+          evidence: String(error),
+        })
+        throw error
+      }
+      void this.runtime
+        .idle(id)
+        .then(async () => {
+          if (this.stopped) return
+          const now = this.board.snapshot().tasks.find((t) => t.id === task.id)
+          if (now?.status === 'triage' && now.analysisSessionId === id)
+            await this.board.update({
+              requestId: crypto.randomUUID(),
+              id: now.id,
+              expectedVersion: now.version,
+              action: 'move',
+              status: 'blocked',
+              evidence: 'Analysis Agent stopped without a structured report',
+            })
+        })
+        .catch((error) => {
+          this.ctx.logger.warn(error)
+        })
+      return task
+    })
+  }
+  @Remote
+  async verify(request: TaskCommand): Promise<Task> {
+    return this.protect(async () => {
+      const task = this.board.snapshot().tasks.find((t) => t.id === request.id)
+      if (!task || task.version !== request.expectedVersion)
+        throw new BoardError('conflict', 'Task changed')
+      if (task.status !== 'in-review' || task.archived)
+        throw new BoardError(
+          'invalid-transition',
+          'Only active review tasks may be verified',
+        )
+      return this.completion.finish(task.id)
     })
   }
   @Remote({ mode: 'stream' })
@@ -222,8 +332,14 @@ export class DashboardService extends TypertRemoteService {
       defineTool({
         name: 'dashboard_report',
         description:
-          'Submit a claimed dashboard task for human review with concrete verification evidence. This never marks it accepted or done.',
+          'Submit concrete verification evidence or a blocked outcome. The Host applies the owner completion policy after the Agent becomes idle; a report alone never completes work.',
         parameters: {
+          outcome: {
+            type: 'string',
+            enum: ['review', 'blocked'],
+            description:
+              'Use blocked when a requirement or verification cannot be completed.',
+          },
           taskId: {
             type: 'string',
             required: true,
@@ -243,17 +359,128 @@ export class DashboardService extends TypertRemoteService {
         },
         async execute(args, exec) {
           if (!exec.agent) throw new Error('Agent Session required')
-          return JSON.stringify(
-            await service.board.report(exec.agent.session.id, {
-              requestId: crypto.randomUUID(),
-              ...args,
-            }),
+          const task = await service.board.report(exec.agent.session.id, {
+            requestId: crypto.randomUUID(),
+            ...args,
+          })
+          if (
+            task.status === 'in-review' &&
+            task.completionPolicy.mode !== 'manual'
           )
+            void service.completion
+              .finish(task.id)
+              .catch((error) => service.ctx.logger.warn(error))
+          return JSON.stringify(task)
         },
         output: {
           schema: { type: 'string' },
           render: (_args, value) => [{ type: 'text', text: value }],
         },
+      }),
+    )
+    const identity = {
+      taskId: { type: 'string', required: true, description: 'Phase task id.' },
+      expectedVersion: {
+        type: 'integer',
+        required: true,
+        description: 'Exact phase version.',
+      },
+    } as const
+    const stringList = { type: 'array', items: { type: 'string' } } as const
+    const risk = {
+      type: 'string',
+      enum: ['low', 'medium', 'high'],
+      required: true,
+    } as const
+    const output = {
+      schema: { type: 'string' },
+      render: (_args: unknown, value: string) => [
+        { type: 'text' as const, text: value },
+      ],
+    } as const
+    this.ctx.tools.register(
+      defineTool({
+        name: 'dashboard_triage',
+        description:
+          'Report analysis for the issue bound to this analysis Session. Preserve frozen criteria; this cannot complete or execute the issue.',
+        parameters: {
+          ...identity,
+          criteria: { ...stringList, required: true },
+          analysis: {
+            type: 'object',
+            additionalProperties: false,
+            required: true,
+            properties: {
+              summary: { type: 'string', required: true },
+              plan: { ...stringList, required: true },
+              risk,
+              route: {
+                type: 'string',
+                enum: ['express', 'staged', 'needs-info', 'human'],
+                required: true,
+              },
+              questions: { ...stringList, required: true },
+            },
+          },
+        },
+        async execute(args, exec) {
+          if (!exec.agent) throw Error('Agent Session required')
+          return JSON.stringify(
+            await service.board.triage(exec.agent.session.id, {
+              requestId: crypto.randomUUID(),
+              ...args,
+            }),
+          )
+        },
+        output,
+      }),
+    )
+    this.ctx.tools.register(
+      defineTool({
+        name: 'dashboard_review',
+        description:
+          'Submit independent criterion-by-criterion review. Only the separately bound reviewer Session may report; the Host alone applies completion after idle.',
+        parameters: {
+          ...identity,
+          review: {
+            type: 'object',
+            additionalProperties: false,
+            required: true,
+            properties: {
+              verdict: {
+                type: 'string',
+                enum: ['pass', 'fail', 'needs-human'],
+                required: true,
+              },
+              risk,
+              results: {
+                type: 'array',
+                required: true,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    criterion: { type: 'integer', required: true },
+                    passed: { type: 'boolean', required: true },
+                    evidence: { type: 'string', required: true },
+                  },
+                },
+              },
+              remainingRisks: { ...stringList, required: true },
+              evidence: { type: 'string', required: true },
+            },
+          },
+        },
+        async execute(args, exec) {
+          if (!exec.agent) throw Error('Agent Session required')
+          return JSON.stringify(
+            await service.board.submitReview(exec.agent.session.id, {
+              requestId: crypto.randomUUID(),
+              ...args,
+            }),
+          )
+        },
+        output,
       }),
     )
   }

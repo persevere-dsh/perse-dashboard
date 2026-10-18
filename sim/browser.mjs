@@ -130,12 +130,14 @@ try {
     .getByLabel('任务说明', { exact: true })
     .fill(
       runtime.lane === 'live'
-        ? 'In this disposable workspace, write sim-result.txt containing exactly DSH_DASHBOARD_LIVE_OK. Read it back and report evidence through dashboard_report. Do not access any other directory.'
+        ? 'In this disposable workspace, write sim-result.txt containing exactly DSH_DASHBOARD_LIVE_OK (no newline). Read it back and report evidence through dashboard_report. Do not access any other directory.'
         : 'Exercise the native task tool contract and submit deterministic evidence. No external model inference is used in this lane.',
     )
+  await form.getByLabel('执行前自动分析议题', { exact: true }).uncheck()
+  await form.getByLabel('完成策略', { exact: true }).selectOption('manual')
   const criterion =
     runtime.lane === 'live'
-      ? 'sim-result.txt contains DSH_DASHBOARD_LIVE_OK'
+      ? 'sim-result.txt contains exactly DSH_DASHBOARD_LIVE_OK with no newline'
       : 'Native DSH tools return a verified evidence report'
   await form.getByLabel('验收标准（每行一条）', { exact: true }).fill(criterion)
   await form.getByRole('button', { name: '创建任务', exact: true }).click()
@@ -160,11 +162,6 @@ try {
     .selectOption(ws)
   // The native queue uses SessionController and official Agent tools, not a fake HTTP task executor.
   await page.getByRole('button', { name: '启动队列', exact: true }).click()
-  await until(
-    async () => (await snapshot()).tasks.find((t) => t.id === task.id).status,
-    'in-progress',
-    10000,
-  )
   await until(
     async () => {
       const s = await snapshot()
@@ -254,6 +251,109 @@ try {
     ).toEqual(['create', 'claim', 'report'])
     check('agent autonomously claims through the real DSH tool then reports')
   }
+  // Automatic intake and completion are exercised through the visible production UI.
+  await page.getByRole('button', { name: '关闭详情', exact: true }).click()
+  await page.getByRole('button', { name: '新建任务', exact: true }).click()
+  const automatic = page.locator('form.pd-create')
+  const autoTitle = 'Automatic native intake and independent review'
+  await automatic.getByLabel('标题', { exact: true }).fill(autoTitle)
+  await automatic
+    .getByLabel('任务说明', { exact: true })
+    .fill(
+      runtime.lane === 'live'
+        ? 'Write auto-result.txt containing exactly DSH_AUTO_LIVE_OK (no newline). Read it back. Independent reviewer must read this file and compare it against the criterion. Use only this disposable workspace.'
+        : 'Write auto-result.txt containing exactly DSH_AUTO_NATIVE_OK and verify it.',
+    )
+  await automatic
+    .getByLabel('验收标准（每行一条）', { exact: true })
+    .fill(
+      'auto-result.txt contains exactly ' +
+        (runtime.lane === 'live' ? 'DSH_AUTO_LIVE_OK' : 'DSH_AUTO_NATIVE_OK'),
+    )
+  await automatic
+    .getByLabel('完成规则提示词', { exact: true })
+    .fill(
+      'Inspect the actual file using a native workspace tool. Only pass if its exact content matches the approved expected value; unavailable checks must fail.',
+    )
+  await automatic
+    .getByRole('button', { name: '添加机器规则', exact: true })
+    .click()
+  await automatic
+    .getByLabel('工作区文件路径', { exact: true })
+    .fill('auto-result.txt')
+  await automatic
+    .getByLabel('期望内容或哈希', { exact: true })
+    .fill(runtime.lane === 'live' ? 'DSH_AUTO_LIVE_OK' : 'DSH_AUTO_NATIVE_OK')
+  await automatic.getByRole('button', { name: '创建任务', exact: true }).click()
+  await expect(
+    page.locator('.pd-card').filter({ hasText: autoTitle }),
+  ).toBeVisible()
+  const intake = (await snapshot()).tasks.find((t) => t.title === autoTitle)
+  expect(intake.status).toBe('triage')
+  await page
+    .getByRole('button', { name: '持续分析与处理', exact: true })
+    .click()
+  await until(
+    async () => {
+      const s = await snapshot(),
+        t = s.tasks.find((t) => t.id === intake.id)
+      if (t.status === 'blocked' || s.dispatch.error)
+        throw Error(JSON.stringify({ t, dispatch: s.dispatch }))
+      return t.status
+    },
+    'done',
+    runtime.lane === 'live' ? 180000 : 60000,
+  )
+  const completed = (await snapshot()).tasks.find((t) => t.id === intake.id)
+  expect(completed.completion.kind).toBe('reviewed')
+  expect(
+    new Set([
+      completed.sessionId,
+      completed.analysisSessionId,
+      completed.reviewSessionId,
+    ]).size,
+  ).toBe(3)
+  expect(completed.review.results.every((r) => r.passed)).toBe(true)
+  expect(
+    await fs.readFile(path.join(runtime.workspace, 'auto-result.txt'), 'utf8'),
+  ).toBe(runtime.lane === 'live' ? 'DSH_AUTO_LIVE_OK' : 'DSH_AUTO_NATIVE_OK')
+  expect(
+    (await snapshot()).ledger
+      .filter((a) => a.taskId === intake.id)
+      .map((a) => a.action),
+  ).toEqual([
+    'create',
+    'analysis-start',
+    'analysis-report',
+    'claim',
+    'report',
+    'review-start',
+    'review-report',
+    'auto-complete',
+  ])
+  check(
+    'visible intake → native analysis → atomic claim → execution → separate reviewer → file checks → automatic completion',
+  )
+  await expect(page.locator('.pd-detail')).toContainText('自动完成')
+  await page
+    .locator('.pd-detail')
+    .screenshot({ path: path.join(run, 'automatic-evidence.png') })
+  await page.getByRole('button', { name: '暂停后续议题', exact: true }).click()
+  check('watcher stays armed between issues and can be paused from the UI')
+  await fs.writeFile(
+    path.join(run, 'protocol-fixture.json'),
+    JSON.stringify(
+      {
+        runtimeVersion: runtime.runtimeVersion,
+        synthetic: runtime.lane === 'native',
+        snapshot: await snapshot(),
+      },
+      null,
+      2,
+    ),
+  )
+  await page.getByRole('button', { name: '关闭详情', exact: true }).click()
+  await page.locator('.pd-card').filter({ hasText: title }).click()
   await page
     .locator('.pd-detail')
     .screenshot({ path: path.join(run, 'task-evidence.png') })
@@ -330,7 +430,10 @@ try {
     path.join(run, 'browser-results.json'),
     JSON.stringify(results, null, 2),
   )
-  await page.screenshot({ path: path.join(run, 'failure.png'), fullPage: true })
+  await page.screenshot({
+    path: path.join(run, 'failure.png'),
+    fullPage: true,
+  })
   await fs.writeFile(
     path.join(run, 'failure.txt'),
     await page.locator('body').innerText(),

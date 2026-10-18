@@ -1,15 +1,40 @@
-# Contracts v1
+# Contracts v2
 
 `perse` = persevere. Part of Persevere with DSH.
 
-Task status: todo -> in-progress -> in-review -> done; blocked and return to todo are explicit actions. Agent completion only reports in-review with evidence; done requires explicit human confirmation and all criteria checked. Each task belongs to an existing DSH Workspace; Session linking verifies the Session belongs to that Workspace. Archives do not delete evidence. Native Agent status is displayed separately from task status.
+## State and authority
 
-Every mutation supplies requestId and expected task version. The Host serializes decisions, rejects stale versions and reused request ids with different payloads, commits task + ledger + dedup record in one Storage Domain global write, then publishes a full replacement snapshot. Responses are only returned after durability. Repeated identical requests return the original task result. A restart preserves request deduplication. No mutation auto-retries on the Client.
+Dashboard intake only; GitHub Issues synchronization is outside this version. Lifecycle:
 
-Remote namespace `perseDashboard`: snapshot, create, update, dispatch and watch. All owner-only by DSH default policy, additionally checked at the service boundary. Untrusted peers cannot enumerate task data. Agent tools run in their own Session context and can claim/report only a task in that Session's workspace; task acceptance is unavailable as an agent tool. Inputs and persisted data are validated. Evidence is plain text, never executable markup.
+```text
+triage → needs-info / blocked / todo
+ todo → in-progress → blocked / in-review → done
+```
 
-Tool claim links the actual Session id and moves the task to in-progress. Report requires nonempty evidence and moves to in-review. A stopped, cancelled or failed agent never completes a task. UI handoff creates an unsent draft, so opening a task cannot spend tokens or execute commands.
+Native analysis returns an immutable-criteria plan, risk and route. Needs-info requires questions. Human routing blocks implementation. Staged and manual-marked work can execute, but cannot automatically finish. Existing tasks migrate to manual completion, with intake disabled. `docs/automation.md` defines the owner-approved policies and point-in-time verification boundary.
 
-Client resource streams begin with a full snapshot. All task views consume the single ordered resource stream, rather than replacing local state from command responses; each snapshot includes its durable revision. Reconnect replaces the resource baseline. Unknown task links are visible as unavailable; missing lifecycle data remains unknown. No direct HTTP endpoint outside DSH Gateway is introduced.
+DSH owns registered Workspaces and Sessions. Every agent phase checks the actual calling Session and workspace. Analysis/review Sessions cannot claim execution work or receive execution assignments. Review uses a fresh Session different from both analyst and executor. No agent tool exposes owner acceptance, policy editing or automatic completion. Only Host code applies completion gates after the relevant native Agents are idle.
 
-A Session may hold only one active claim. An explicit claim for another task fails until that claim is reported or returned. Dispatcher transport failures block the active task and pause subsequent dispatches. Scope edits are allowed only while queued; mutations are rejected while the linked native Agent is running. Assigned tasks open their assigned conversation; an unsent new-session draft is available only for unassigned tasks.
+## Commands and durability
+
+Remote namespace `perseDashboard`: snapshot, create, update, dispatch, analyze, verify, watch. All are owner-only under DSH policy and checked at the service boundary. No production HTTP service outside DSH Gateway is introduced.
+
+Task mutations create/update and agent reports carry a requestId; updates and phase reports also carry expectedVersion. The Host serializes decisions and atomically commits task + ledger + dedup receipt in one Storage Domain global write, before publishing or returning success. An identical request returns its original result; reusing its id with a different payload or actor fails. Stale writes fail without a phantom revision. Receipts are retained across restart within the bounded storage retention policy.
+
+Analyze/verify coordinate native side effects. They validate the expected task version but do **not** promise durable exactly-once execution of the complete multi-step command. Clients do not automatically retry them. Inspect the linked phase Session and task before explicitly retrying; a lost response is not evidence that no Session was created. Dispatch activation is process-local and disarmed on restart.
+
+Tools: `dashboard_claim_next`, `dashboard_report`, `dashboard_triage`, `dashboard_review`. Claim atomically binds one eligible task to the actual Session. Only one in-progress task per Session is allowed. Report requires concrete evidence and enters in-review or blocked. Analysis/review reports require a matching phase Session and version. Analysis can propose criteria only when none existed; it cannot rewrite existing criteria or owner rules.
+
+## Completion and recovery
+
+Manual acceptance requires nonempty evidence, at least one criterion, every criterion checked, and an owner action. Verified completion requires a check covering every criterion. Reviewed completion requires a separate native reviewer, all criteria passing with evidence, low risk and no remaining risks. Optional approved file checks apply to reviewed tasks too. All automatic modes additionally require express, low risk, no manual flag and an evidence report. Receipts record rule version, prompt/policy hash, evidence hash, criterion results, file-check results and reviewer identity.
+
+File checks compare exact UTF-8 text or SHA256 for a bounded regular file inside the registered workspace. They reject absolute paths, traversal and escaping symlinks. They are point-in-time checks; they do not prove future immutability or arbitrary program correctness. A reviewer is another model Session, not a human or an independent formal verifier. The selected owner policy is the authority to use this evidence.
+
+Failure, cancellation, missing reports and failed/partial review never imply done. Errors remain visible. Restart preserves task state, disarms dispatch, and never replays an old in-progress claim. Explicitly inspect and requeue stuck work; a pending automatic verification can be retried from its detail panel. Pause stops subsequent issues; native DSH controls stop an active Agent.
+
+## Client and compatibility
+
+The native resource starts with a full replacement snapshot and reconnect replaces its baseline. Command responses do not overwrite the streamed task resource. Unknown fields are tolerated; malformed/incompatible task generations disable mutation and retain a last confirmed baseline. Scope, rule and lifecycle changes are rejected while a linked execution/analysis/review Agent is running. Accepted evidence is frozen until explicit reopening. Archives preserve evidence and have a restore path.
+
+Domain storage stays version 1 with defaults for the new optional persisted fields; the wire vocabulary and rule generation are v2. This is a forward migration: old plugin builds are not guaranteed to read triage/needs-info states; back up the isolated profile before downgrading. DSH preview APIs remain pinned to the tested runtime generation.

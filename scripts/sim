@@ -14,6 +14,7 @@ def terminate(process):
     while time.monotonic()<deadline:
         try:os.killpg(process.pid,0)
         except ProcessLookupError:return True
+        except PermissionError:pass  # macOS can transiently deny a group probe while final descendants exit; never treat denial as cleanup.
         time.sleep(.05)
     return False
 def command(argv,log,env,timeout=300,lock_fd=None):
@@ -25,8 +26,38 @@ def command(argv,log,env,timeout=300,lock_fd=None):
         finally:
             if not terminate(p):raise RuntimeError(f'Owned process group remains: {p.pid}; {log}')
 
+def lab(args,run,state,env,lock):
+    process=None;summary={'lane':'lab','status':'running','cleanup':False,'stateRoot':str(state)}
+    try:
+        command(['npm','run','build'],run/'build.log',env,300,lock.fileno())
+        command(['npx','tsdown','--config','sim/lab/tsdown.config.ts'],run/'bundle.log',env,60,lock.fileno())
+        out=(run/'host.log').open('w');process=subprocess.Popen(['node','sim/lab/server.mjs'],cwd=ROOT,env={**env,'PERSE_LAB_STATE':str(state)},stdout=out,stderr=subprocess.STDOUT,start_new_session=True,pass_fds=(lock.fileno(),))
+        deadline=time.monotonic()+15
+        while not (state/'runtime.json').exists():
+            if process.poll() is not None or time.monotonic()>deadline:raise RuntimeError('Lab startup failed')
+            time.sleep(.05)
+        runtime=json.loads((state/'runtime.json').read_text());(run/'runtime.json').write_text(json.dumps(runtime));summary.update(runtime)
+        print('LAB '+str(run)+' '+runtime['url'],flush=True)
+        for repeat in range(args.repeat):
+            evidence=run if args.repeat==1 else run/f'repeat-{repeat+1}';evidence.mkdir(exist_ok=True);(evidence/'runtime.json').write_text(json.dumps(runtime))
+            command(['node','sim/lab/browser.mjs'],evidence/'browser.log',{**env,'PERSEVERE_DSH_SIM':str(evidence),'PERSE_LAB_SCENARIO':args.scenario},args.timeout,lock.fileno())
+        summary['status']='passed'
+        if args.keep:
+            print('Preview active; Ctrl-C cleans only this Lab.',flush=True)
+            while process.poll() is None:time.sleep(.5)
+    except KeyboardInterrupt:
+        if summary['status']!='passed':summary['status']='interrupted'
+    except BaseException as error:summary.update(status='failed',error=str(error));print(str(error),file=sys.stderr)
+    finally:
+        summary['cleanup']=terminate(process)
+        if process:out.close()
+        (run/'summary.json').write_text(json.dumps(summary,indent=2));print(run/'summary.json',flush=True)
+    return 0 if summary['status']=='passed' and summary['cleanup'] else 1
+
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--lane',choices=['native','live'],default='native');parser.add_argument('--keep',action='store_true');parser.add_argument('--timeout',type=int,default=180);args=parser.parse_args()
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--lane',choices=['native','live','lab'],default='native');parser.add_argument('--scenario',default='all');parser.add_argument('--repeat',type=int,default=1);parser.add_argument('--keep',action='store_true');parser.add_argument('--timeout',type=int,default=180);args=parser.parse_args()
+    if not 1<=args.repeat<=10:parser.error('--repeat must be between 1 and 10')
+    if args.lane!='lab' and (args.repeat!=1 or args.scenario!='all'):parser.error('--scenario and --repeat apply to the Lab lane')
     def interrupted(_signal,_frame):raise KeyboardInterrupt()
     signal.signal(signal.SIGTERM,interrupted)
     build=ROOT/'.build';build.mkdir(exist_ok=True);lock=(build/'sim.lock').open('a+')
@@ -41,6 +72,7 @@ def main():
     env={**os.environ,'DSH_HOME':str(home),'ELECTRON_RUN_AS_NODE':'1','DSH_TELEMETRY_ENABLED':'false','PERSEVERE_DSH_SIM_RUN':str(run),'PERSEVERE_DSH_EXPECT_CLIENT':str(home/'profiles/web/node_modules/perse-dashboard/lib/client.js')}
     # Exact caller-supplied CLI is supported on other hosts. Never resolve a shell string.
     cli=json.loads(os.environ.get('PERSEVERE_DSH_COMMAND',json.dumps([str(APP/'MacOS/DeepSeek Harness'),'--expose-internals',str(APP/'Resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js')])))
+    if args.lane=='lab':return lab(args,run,state,env,lock)
     version=subprocess.run(cli+['--version'],env=env,capture_output=True,text=True,check=True).stdout.strip()
     source=subprocess.run(['git','rev-parse','HEAD'],cwd=ROOT,capture_output=True,text=True)
     dirty=subprocess.run(['git','status','--porcelain'],cwd=ROOT,capture_output=True,text=True)

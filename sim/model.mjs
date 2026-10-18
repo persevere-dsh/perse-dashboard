@@ -15,7 +15,6 @@ class SimulationAdapter extends LlmAdapter {
     ]
   }
   async *stream(options) {
-    await new Promise((resolve) => setTimeout(resolve, 2000))
     options.signal?.throwIfAborted()
     const messages = options.messages
     const lastUser = messages.findLastIndex(
@@ -24,7 +23,9 @@ class SimulationAdapter extends LlmAdapter {
         (m.content ?? []).some(
           (b) =>
             b.type === 'text' &&
-            /^(Work on dashboard task|Use dashboard_claim_next)/.test(b.text),
+            /^(Analyze dashboard issue|Review dashboard task|Work on dashboard task|Use dashboard_claim_next)/.test(
+              b.text,
+            ),
         ),
     )
     const tail = messages.slice(lastUser + 1)
@@ -48,11 +49,77 @@ class SimulationAdapter extends LlmAdapter {
       arguments: JSON.stringify(args),
     })
     let block
-    if (user.includes('already claimed')) {
+    const data = user.includes('TASK_DATA=')
+      ? JSON.parse(user.split('TASK_DATA=')[1].split('\n')[0])
+      : null
+    const quote = (value) =>
+      "'" + String(value).replaceAll("'", "'\"'\"'") + "'"
+    if (
+      user.startsWith('Analyze dashboard issue') &&
+      data &&
+      !toolResults.length
+    ) {
+      block = call('dashboard_triage', {
+        taskId: data.taskId,
+        expectedVersion: data.version,
+        criteria: data.criteria.length
+          ? data.criteria
+          : ['Native workspace artifact is verified'],
+        analysis: {
+          summary: 'Deterministic analysis through the actual DSH tool',
+          plan: [
+            'Produce isolated artifact',
+            'Read back result',
+            'Report evidence',
+          ],
+          risk: 'low',
+          route: 'express',
+          questions: [],
+        },
+      })
+    } else if (user.startsWith('Review dashboard task') && data) {
+      if (!toolResults.length)
+        block = call('bash', {
+          command: data.completionPolicy.checks.length
+            ? data.completionPolicy.checks
+                .map((c) => 'cat -- ' + quote(c.path))
+                .join(' && ')
+            : 'cat sim-shell.txt',
+          description:
+            'Independently read the actual native workspace artifact',
+        })
+      else if (toolResults.length === 1)
+        block = call('dashboard_review', {
+          taskId: data.taskId,
+          expectedVersion: data.version,
+          review: {
+            verdict: 'pass',
+            risk: 'low',
+            results: data.criteria.map((c, criterion) => ({
+              criterion,
+              passed: true,
+              evidence:
+                'Actual native shell readback: ' +
+                JSON.stringify(toolResults[0].content),
+            })),
+            remainingRisks: [],
+            evidence:
+              'Independent native DSH Session read the workspace artifact using its actual bash tool.',
+          },
+        })
+    } else if (user.includes('already claimed')) {
       const id = user.match(/task ([a-f0-9-]+), version (\d+)/)
       if (!toolResults.length && id)
         block = call('bash', {
-          command: 'printf DSH_SIM_SHELL_OK > sim-shell.txt',
+          command:
+            'printf DSH_SIM_SHELL_OK > sim-shell.txt' +
+            (data?.completionPolicy.checks ?? [])
+              .filter((c) => c.kind === 'text-equals')
+              .map(
+                (c) =>
+                  ' && printf %s ' + quote(c.expected) + ' > ' + quote(c.path),
+              )
+              .join(''),
           description: 'Verify a native DSH workspace tool',
         })
       else if (toolResults.length === 1 && id)
