@@ -140,7 +140,29 @@ try {
         : 'Exercise the native task tool contract and submit deterministic evidence. No external model inference is used in this lane.',
     )
   await form.getByLabel('执行前自动分析议题', { exact: true }).uncheck()
-  await form.getByLabel('完成策略', { exact: true }).selectOption('manual')
+  await expect(
+    form
+      .getByRole('radiogroup', { name: '完成策略', exact: true })
+      .getByRole('radio', { name: '独立复核通过后自动完成', exact: true }),
+  ).toBeChecked()
+  await form
+    .getByRole('radiogroup', { name: '完成策略', exact: true })
+    .getByRole('radio', { name: '人工验收', exact: true })
+    .check()
+  await expect(
+    form
+      .getByRole('radiogroup', { name: '完成策略', exact: true })
+      .getByRole('radio', { name: '人工验收', exact: true }),
+  ).toBeChecked()
+  await form
+    .getByRole('radiogroup', { name: '优先级', exact: true })
+    .getByRole('radio', { name: '高', exact: true })
+    .check()
+  await expect(
+    form
+      .getByRole('radiogroup', { name: '分配到会话', exact: true })
+      .getByRole('radio', { name: '工作区队列', exact: true }),
+  ).toBeChecked()
   const criterion =
     runtime.lane === 'live'
       ? 'sim-result.txt contains exactly DSH_DASHBOARD_LIVE_OK with no newline'
@@ -152,6 +174,8 @@ try {
   ).toBeVisible()
   let task = (await snapshot()).tasks.find((t) => t.title === title)
   expect(task.status).toBe('todo')
+  expect(task.priority).toBe(2)
+  expect(task.assignee).toBe(null)
   check('task creation is durable and never executes a model')
 
   await page.getByRole('button', { name: '准备 DSH 草稿', exact: true }).click()

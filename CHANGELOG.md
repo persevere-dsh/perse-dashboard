@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Replace every dropdown inside the new task panel with accessible chip radio groups: workspace, priority, assigned session, completion policy and machine-check kind. Hidden native radios keep arrow-key navigation and the group caption keeps its accessible name; long dynamic session lists wrap inside a bounded scrollable surface with no text truncation. Light, dark, desktop and narrow journeys gain create-panel screenshots plus browser assertions that verify each chip selection reaches the durable task through both the Lab fixture and the packed native lane.
+
 ## 1.1.0
 
 - Add dashboard issue triage, frozen criteria and express/staged/needs-info/human routes using dedicated native analysis Sessions.
