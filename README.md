@@ -75,4 +75,6 @@ Read [architecture](docs/architecture.md), [wire and lifecycle contracts](docs/c
 
 One installation belongs to one DSH Host. Install it on a remote DSH Host and use that Host's existing trusted Web/SSH transport to view its work. This version does not aggregate different Hosts, broker SSH credentials, implement cron scheduling or automatically merge/deploy agent changes.
 
-MIT. Part of Persevere with DSH
+MIT.
+
+Part of Persevere with DSH

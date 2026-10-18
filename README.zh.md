@@ -51,4 +51,6 @@ npm run sim -- --lane native --keep
 
 指定会话的任务请打开该会话认领，或启动队列；准备新会话草稿的按钮会禁用，避免把任务交给无权认领的会话。
 
-MIT。Part of Persevere with DSH
+MIT.
+
+Part of Persevere with DSH
