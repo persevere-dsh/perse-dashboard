@@ -19,3 +19,8 @@ class SimRunnerTest(unittest.TestCase):
    finally:sim.terminate(sibling)
  def test_cleanup_is_repeatable_after_normal_exit(self):
   child=subprocess.Popen([sys.executable,'-c','pass'],start_new_session=True);child.wait();sim.terminate(child);sim.terminate(child)
+
+ def test_background_descendant_is_reaped_even_after_leader_exits(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   code='import subprocess,sys; subprocess.Popen([sys.executable,"-c","import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);time.sleep(30)"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)'
+   sim.command([sys.executable,'-c',code],pathlib.Path(tmp)/'descendant.log',os.environ.copy(),3)

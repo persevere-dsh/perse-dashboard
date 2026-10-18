@@ -4,19 +4,26 @@ import re,shutil,tempfile,argparse,contextlib,fcntl,hashlib,json,os,pathlib,sign
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 APP=pathlib.Path('/Applications/DeepSeek Harness.app/Contents')
 def terminate(process):
-    if process is None:return
+    if process is None:return True
     with contextlib.suppress(ProcessLookupError):os.killpg(process.pid,signal.SIGTERM)
     try:process.wait(timeout=8)
     except subprocess.TimeoutExpired:pass
     with contextlib.suppress(ProcessLookupError):os.killpg(process.pid,signal.SIGKILL)
     process.wait()
+    deadline=time.monotonic()+3
+    while time.monotonic()<deadline:
+        try:os.killpg(process.pid,0)
+        except ProcessLookupError:return True
+        time.sleep(.05)
+    return False
 def command(argv,log,env,timeout=300,lock_fd=None):
     with log.open('w') as output:
         p=subprocess.Popen(argv,cwd=ROOT,env=env,stdout=output,stderr=subprocess.STDOUT,start_new_session=True,pass_fds=() if lock_fd is None else (lock_fd,))
         try:
             rc=p.wait(timeout=timeout)
             if rc:raise RuntimeError(f'Command failed ({rc}): {log}')
-        except BaseException:terminate(p);raise
+        finally:
+            if not terminate(p):raise RuntimeError(f'Owned process group remains: {p.pid}; {log}')
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--lane',choices=['native','live'],default='native');parser.add_argument('--keep',action='store_true');parser.add_argument('--timeout',type=int,default=180);args=parser.parse_args()
@@ -91,11 +98,12 @@ def main():
         if (run/'browser-results.json').exists():summary['assertions']=json.loads((run/'browser-results.json').read_text())
         print(str(error),file=sys.stderr)
     finally:
-        terminate(process)
+        cleaned=terminate(process)
+        if not cleaned:summary.update(status='failed',error='Owned DSH process group remains; cleanup incomplete')
         if out:out.close()
         # Credentials are transient even when failed-run evidence is retained.
         (home/'.credentials.yaml').unlink(missing_ok=True)
         summary.pop('authUrl',None)
-        summary.update(cleanup=process is None or process.poll() is not None,finishedAt=time.time());(run/'summary.json').write_text(json.dumps(summary,indent=2));print(str(run/'summary.json'),flush=True)
+        summary.update(cleanup=cleaned,finishedAt=time.time());(run/'summary.json').write_text(json.dumps(summary,indent=2));print(str(run/'summary.json'),flush=True)
     return 0 if summary['status']=='passed' else 1
 if __name__=='__main__':sys.exit(main())
