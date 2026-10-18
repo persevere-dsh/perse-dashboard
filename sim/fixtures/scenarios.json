@@ -1,0 +1,297 @@
+{
+  "formatVersion": 2,
+  "synthetic": true,
+  "contract": "perse-dashboard/2",
+  "referenceHermexCommit": "facb55afabcd143cbca5094b0854186eed10fc3f",
+  "dense": [
+    {
+      "id": "fixture-triage",
+      "workspaceId": "alpha",
+      "title": "Clarify result",
+      "description": "Synthetic full-state fixture. All mutations use the production controller.",
+      "criteria": ["Expected result is observable"],
+      "checked": [false],
+      "evidence": "",
+      "priority": 0,
+      "assignee": null,
+      "sessionId": null,
+      "status": "triage",
+      "version": 1,
+      "archived": false,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "intake": true,
+      "needsManual": false
+    },
+    {
+      "id": "fixture-needs-info",
+      "workspaceId": "alpha",
+      "title": "Choose output format",
+      "description": "Synthetic full-state fixture. All mutations use the production controller.",
+      "criteria": ["Expected result is observable"],
+      "checked": [false],
+      "evidence": "",
+      "priority": 1,
+      "assignee": null,
+      "sessionId": null,
+      "status": "needs-info",
+      "version": 1,
+      "archived": false,
+      "createdAt": 1700000000001,
+      "updatedAt": 1700000000001,
+      "intake": true,
+      "needsManual": false,
+      "analysis": {
+        "summary": "Output is ambiguous",
+        "plan": ["Clarify output with owner"],
+        "risk": "medium",
+        "route": "needs-info",
+        "questions": ["Which output format is required?"]
+      },
+      "analysisSessionId": "session-alpha-analyst"
+    },
+    {
+      "id": "fixture-todo",
+      "workspaceId": "alpha",
+      "title": "Implement accepted scope",
+      "description": "Synthetic full-state fixture. All mutations use the production controller.",
+      "criteria": ["Expected result is observable"],
+      "checked": [false],
+      "evidence": "",
+      "priority": 2,
+      "assignee": "session-alpha-builder",
+      "sessionId": null,
+      "status": "todo",
+      "version": 1,
+      "archived": false,
+      "createdAt": 1700000000002,
+      "updatedAt": 1700000000002,
+      "intake": false,
+      "needsManual": false
+    },
+    {
+      "id": "fixture-in-progress",
+      "workspaceId": "alpha",
+      "title": "Worker already executing",
+      "description": "Synthetic full-state fixture. All mutations use the production controller.",
+      "criteria": ["Expected result is observable"],
+      "checked": [false],
+      "evidence": "",
+      "priority": 0,
+      "assignee": "session-alpha-builder",
+      "sessionId": "session-alpha-builder",
+      "status": "in-progress",
+      "version": 1,
+      "archived": false,
+      "createdAt": 1700000000003,
+      "updatedAt": 1700000000003,
+      "intake": false,
+      "needsManual": false
+    },
+    {
+      "id": "fixture-blocked",
+      "workspaceId": "alpha",
+      "title": "Waiting for owner input",
+      "description": "Synthetic full-state fixture. All mutations use the production controller.",
+      "criteria": ["Expected result is observable"],
+      "checked": [false],
+      "evidence": "Fixture verification evidence",
+      "priority": 1,
+      "assignee": null,
+      "sessionId": null,
+      "status": "blocked",
+      "version": 1,
+      "archived": false,
+      "createdAt": 1700000000004,
+      "updatedAt": 1700000000004,
+      "intake": false,
+      "needsManual": false
+    },
+    {
+      "id": "fixture-in-review",
+      "workspaceId": "beta",
+      "title": "Review verified result",
+      "description": "Synthetic full-state fixture. All mutations use the production controller.",
+      "criteria": ["Expected result is observable"],
+      "checked": [false],
+      "evidence": "Fixture verification evidence",
+      "priority": 2,
+      "assignee": null,
+      "sessionId": null,
+      "status": "in-review",
+      "version": 1,
+      "archived": false,
+      "createdAt": 1700000000005,
+      "updatedAt": 1700000000005,
+      "intake": false,
+      "needsManual": false
+    },
+    {
+      "id": "fixture-done",
+      "workspaceId": "beta",
+      "title": "Completed and recorded",
+      "description": "Synthetic full-state fixture. All mutations use the production controller.",
+      "criteria": ["Expected result is observable"],
+      "checked": [true],
+      "evidence": "Fixture verification evidence",
+      "priority": 0,
+      "assignee": null,
+      "sessionId": null,
+      "status": "done",
+      "version": 1,
+      "archived": false,
+      "createdAt": 1700000000006,
+      "updatedAt": 1700000000006,
+      "intake": false,
+      "needsManual": false,
+      "completion": {
+        "kind": "human",
+        "time": 1700000000006,
+        "ruleVersion": "completion/2",
+        "promptHash": "synthetic",
+        "evidenceHash": "synthetic",
+        "reviewerSessionId": null,
+        "results": [
+          {
+            "criterion": 0,
+            "passed": true,
+            "evidence": "Synthetic owner acceptance fixture"
+          }
+        ],
+        "checks": []
+      }
+    },
+    {
+      "id": "fixture-archived",
+      "workspaceId": "beta",
+      "title": "Archived experiment",
+      "description": "Synthetic full-state fixture. All mutations use the production controller.",
+      "criteria": ["Expected result is observable"],
+      "checked": [true],
+      "evidence": "Fixture verification evidence",
+      "priority": 0,
+      "assignee": null,
+      "sessionId": null,
+      "status": "done",
+      "version": 1,
+      "archived": true,
+      "createdAt": 1700000000006,
+      "updatedAt": 1700000000006,
+      "intake": false,
+      "needsManual": false,
+      "completion": {
+        "kind": "human",
+        "time": 1700000000006,
+        "ruleVersion": "completion/2",
+        "promptHash": "synthetic",
+        "evidenceHash": "synthetic",
+        "reviewerSessionId": null,
+        "results": [
+          {
+            "criterion": 0,
+            "passed": true,
+            "evidence": "Synthetic owner acceptance fixture"
+          }
+        ],
+        "checks": []
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "first-load",
+      "description": "A controllable initial request gate",
+      "seed": "dense"
+    },
+    {
+      "id": "dense",
+      "description": "All states, two workspaces, assignments, evidence, archive",
+      "seed": "dense"
+    },
+    {
+      "id": "empty",
+      "description": "No task data, fully functional creation",
+      "seed": "empty"
+    },
+    {
+      "id": "filtered-empty",
+      "description": "A valid board with no matching filter",
+      "seed": "dense"
+    },
+    {
+      "id": "partial",
+      "description": "Read-only capability with visible explanation",
+      "seed": "dense"
+    },
+    {
+      "id": "authentication",
+      "description": "Owner request rejected; entry stays visible",
+      "seed": "dense"
+    },
+    {
+      "id": "network",
+      "description": "Dropped transport with retry",
+      "seed": "dense"
+    },
+    {
+      "id": "server-unavailable",
+      "description": "HTTP 503 with retry",
+      "seed": "dense"
+    },
+    {
+      "id": "incompatible",
+      "description": "Invalid task status fails the boundary guard",
+      "seed": "dense"
+    },
+    {
+      "id": "live-delayed",
+      "description": "Stream fails and reconnect retains a baseline",
+      "seed": "dense"
+    },
+    {
+      "id": "offline",
+      "description": "Last confirmed snapshot remains visible and read-only",
+      "seed": "dense"
+    },
+    {
+      "id": "detail-empty",
+      "description": "Empty optional detail data",
+      "seed": "dense"
+    },
+    {
+      "id": "detail-error",
+      "description": "Detail mutation refuses without a phantom commit",
+      "seed": "dense"
+    },
+    {
+      "id": "detail-long",
+      "description": "Maximum-size legal evidence and activity data",
+      "seed": "dense"
+    },
+    {
+      "id": "automation",
+      "description": "Analysis, execution, independent review and machine verification",
+      "seed": "empty"
+    },
+    {
+      "id": "analysis-decisions",
+      "description": "Needs-info, staged and human routing",
+      "seed": "empty"
+    },
+    {
+      "id": "execution-failure",
+      "description": "Blocked and missing report paths",
+      "seed": "empty"
+    },
+    {
+      "id": "verification-failure",
+      "description": "Failed file, partial review and reviewer refusal",
+      "seed": "empty"
+    },
+    {
+      "id": "recovery",
+      "description": "Durable state survives restart; in-progress work is not rerun",
+      "seed": "empty"
+    }
+  ]
+}

@@ -15,8 +15,23 @@ assert.ok(!bundle.includes('node:fs'))
 assert.ok(!bundle.includes('setBypassCSP'))
 assert.equal(pkg.name, 'perse-dashboard')
 const remote = await import('../lib/typert.remote-client.js')
-assert.equal(remote.default.descriptors.length, 5)
+assert.equal(remote.default.descriptors.length, 7)
+assert.deepEqual(
+  remote.default.descriptors.map((d) => d.name ?? d.method).sort(),
+  ['analyze', 'create', 'dispatch', 'snapshot', 'update', 'verify', 'watch'],
+)
 console.log('Package surface and generated Remote contract verified')
 
 for (const file of ['sim/browser.mjs', 'sim/model.mjs', 'sim/diagnostics.mjs'])
   execFileSync(process.execPath, ['--check', file])
+
+const packed = JSON.parse(
+  execFileSync('npm', ['pack', '--dry-run', '--json'], { encoding: 'utf8' }),
+)[0]
+assert.ok(
+  packed.files.every((f) => !/^sim\/|^test\/|^\.build\//.test(f.path)),
+  'Lab/test/runtime artifacts must never enter the production package',
+)
+console.log(
+  'Synthetic Lab and private runtime artifacts excluded from production tarball',
+)

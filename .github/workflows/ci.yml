@@ -16,4 +16,16 @@ jobs:
       - run: npm run codegen
       - run: npm run check
       - run: python3 -m unittest discover -s test -p '*_test.py' -v
+      - run: npx playwright install --with-deps chromium
+      - run: npm run sim -- --lane lab --scenario all --timeout 240
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab-evidence
+          path: |
+            .build/sim/*/summary.json
+            .build/sim/*/coverage.json
+            .build/sim/*/*.png
+            .build/sim/*/*.log
+          retention-days: 7
       - run: npm pack --dry-run
