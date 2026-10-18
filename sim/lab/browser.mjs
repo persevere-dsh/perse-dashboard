@@ -637,6 +637,9 @@ try {
         .getByRole('button', { name: 'Discard draft', exact: true })
         .click()
       await expect(page.getByRole('dialog')).toHaveCount(0)
+      await expect(
+        page.getByRole('button', { name: 'New task', exact: true }),
+      ).toBeFocused()
       expect(
         (await data()).snapshot.tasks.some(
           (t) => t.title === 'Protected creation draft',

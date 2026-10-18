@@ -33,8 +33,12 @@ export function Dialog({
     dialog.querySelector<HTMLElement>('[data-dialog-autofocus]')?.focus()
     return () => {
       dialog.close()
-      if (previous instanceof HTMLElement && previous.isConnected)
-        previous.focus({ preventScroll: true })
+      // Nested dialogs may unmount together. Restore after the full commit,
+      // when the invoking control is no longer inert beneath the top layer.
+      queueMicrotask(() => {
+        if (previous instanceof HTMLElement && previous.isConnected)
+          previous.focus({ preventScroll: true })
+      })
     }
   }, [])
   return (
