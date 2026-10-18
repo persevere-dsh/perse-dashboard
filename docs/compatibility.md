@@ -12,7 +12,7 @@ The official design is the authority:
 - https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/core/agent
 
 Borrowed ideas, with original implementation here:
-- dashi-taskboard: issue assignment, Kanban workflow, session handoff and explicit user acceptance.
+- [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard): issue assignment, Kanban workflow, session handoff and explicit user acceptance.
 - codex-gateway: runtime remains authoritative; views render protocol state.
 - codex-dash: distinguish stale/unknown observations from live Agent status.
 - AgentPulse: opt-in queue execution and explicit Host ownership.

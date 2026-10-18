@@ -6,7 +6,7 @@ export const inject=['llm'];
 class SimulationAdapter extends LlmAdapter {
  async listModels(){return [{provider:'dashboard-sim',id:'sim',name:'Deterministic simulation',context:{maxTokens:64000}}]}
  async *stream(options){
-  options.signal?.throwIfAborted();const messages=options.messages;
+  await new Promise(resolve=>setTimeout(resolve,2000));options.signal?.throwIfAborted();const messages=options.messages;
   const lastUser=messages.findLastIndex(m=>m.role==='user'&&(m.content??[]).some(b=>b.type==='text'&&/^(Work on dashboard task|Use dashboard_claim_next)/.test(b.text)));const tail=messages.slice(lastUser+1);
   const toolResults=tail.filter(m=>m.role==='tool');
   const user=(messages[lastUser]?.content??[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');

@@ -10,10 +10,10 @@ const snapshot=()=>rpc('perseDashboard/snapshot');
 async function board(target=page){await target.getByText('工作看板',{exact:true}).first().click();await expect(target.getByRole('heading',{name:'工作看板',exact:true})).toBeVisible()}
 async function until(fn,expected,timeout=60000){await expect.poll(fn,{timeout,intervals:[100,300,700]}).toEqual(expected)}
 try{
+ const binding=JSON.parse(await fs.readFile(path.join(run,'artifact-binding.json'),'utf8'));expect(binding.installedPackage).toBe(true);check('DSH resolves the installed tarball artifact outside the checkout');
  await page.goto(runtime.authUrl);
  const cookies=(await context.cookies()).map(c=>`${c.name}=${c.value}`).join('; ');
  graphLog=(async()=>{const response=await fetch(runtime.url+'/plugins/events',{headers:{cookie:cookies},signal:diagnostics.signal});const reader=response.body.getReader(),decoder=new TextDecoder();let pending='';for(;;){const {done,value}=await reader.read();if(done)break;pending+=decoder.decode(value,{stream:true});let i;while((i=pending.indexOf('\n'))>=0){const line=pending.slice(0,i);pending=pending.slice(i+1);if(line.startsWith('data:'))await fs.appendFile(path.join(run,'client-graph.jsonl'),line.slice(5).trim()+'\n')}}})().catch(e=>{if(!diagnostics.signal.aborted)logs.push({type:'graph-diagnostic',text:String(e)})});
- if(runtime.lane==='native'&&process.env.PERSEVERE_DSH_HMR_PROBE){const file=path.join(runtime.home,'profiles/web/node_modules/perse-dashboard/lib/client.js');await fs.utimes(file,new Date(),new Date());await new Promise(resolve=>setTimeout(resolve,1500))}
  const cont=page.getByRole('button',{name:'继续',exact:true});await page.getByText('工作看板',{exact:true}).first().waitFor({timeout:15000});try{await cont.waitFor({timeout:5000});await cont.click()}catch(e){if(!String(e).includes('Timeout'))throw e}await board();await expect(page.getByText('正在连接 DSH…')).toHaveCount(0);check('native slot loads without DOM injection');
  const created=await rpc('workspace/create',{request:{path:runtime.workspace,title:'Dashboard simulation'}}),ws=created.workspace.workspaceId;
  await page.getByRole('combobox',{name:'全部工作区',exact:true}).selectOption(ws);
@@ -24,14 +24,17 @@ try{
  const criterion=runtime.lane==='live'?'sim-result.txt contains DSH_DASHBOARD_LIVE_OK':'Native DSH tools return a verified evidence report';
  await form.getByLabel('验收标准（每行一条）',{exact:true}).fill(criterion);await form.getByRole('button',{name:'创建任务',exact:true}).click();
  await expect(page.locator('.pd-card').filter({hasText:title})).toBeVisible();let task=(await snapshot()).tasks.find(t=>t.title===title);expect(task.status).toBe('todo');check('task creation is durable and never executes a model');
+
  await page.getByRole('button',{name:'准备 DSH 草稿',exact:true}).click();await expect(page.locator('[contenteditable="true"]').first()).toContainText('dashboard_claim_next');expect((await snapshot()).tasks.find(t=>t.id===task.id).status).toBe('todo');check('handoff opens an unsent native DSH draft');await board();await page.getByRole('combobox',{name:'全部工作区',exact:true}).selectOption(ws);
  // The native queue uses SessionController and official Agent tools, not a fake HTTP task executor.
  await page.getByRole('button',{name:'启动队列',exact:true}).click();
+ await until(async()=>(await snapshot()).tasks.find(t=>t.id===task.id).status,'in-progress',10000);
  await until(async()=>{const s=await snapshot();const t=s.tasks.find(t=>t.id===task.id);if(t?.status==='blocked'||s.dispatch.error)throw Error(JSON.stringify({task:t,dispatch:s.dispatch}));return t?.status},'in-review',runtime.lane==='live'?120000:30000);
  await until(async()=>(await snapshot()).dispatch.enabled,false);
- if(runtime.lane==='native')await new Promise(resolve=>setTimeout(resolve,12000));
+ 
  task=(await snapshot()).tasks.find(t=>t.id===task.id);expect(task.sessionId).toBeTruthy();expect(task.evidence.length).toBeGreaterThan(5);expect(task.checked).toEqual([false]);check('native queue atomically claims and reports evidence without auto-accepting');
- if(runtime.lane==='live'){expect((await fs.readFile(path.join(runtime.workspace,'sim-result.txt'),'utf8')).trim()).toBe('DSH_DASHBOARD_LIVE_OK');check('real model wrote and read the exact isolated artifact')}
+ if(runtime.lane==='native'){expect(await fs.readFile(path.join(runtime.workspace,'sim-shell.txt'),'utf8')).toBe('DSH_SIM_SHELL_OK');check('deterministic provider invokes the real workspace shell tool')}
+ if(runtime.lane==='live'){expect(await fs.readFile(path.join(runtime.workspace,'sim-result.txt'),'utf8')).toBe('DSH_DASHBOARD_LIVE_OK');check('real model wrote and read the exact isolated artifact')}
  await page.locator('.pd-card').filter({hasText:title}).click();await expect(page.getByRole('button',{name:'确认验收并完成'})).toBeDisabled();await page.getByLabel(criterion,{exact:true}).click();await expect(page.getByLabel(criterion,{exact:true})).toBeChecked();await expect(page.getByRole('button',{name:'确认验收并完成'})).toBeEnabled();await page.getByRole('button',{name:'确认验收并完成'}).click();await until(async()=>(await snapshot()).tasks.find(t=>t.id===task.id).status,'done');check('only explicit human acceptance completes the task');
  if(runtime.lane==='native'){
    const pull=await rpc('perseDashboard/create',{request:{requestId:crypto.randomUUID(),workspaceId:ws,title:'Agent pull contract',description:'Claim through actual DSH tool',criteria:['Actual agent claim and report'],priority:2,assignee:null}});
@@ -52,4 +55,4 @@ try{
  await page.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});await page.screenshot({path:path.join(run,'dark.png'),fullPage:true});
  expect(errors).toEqual([]);check('no browser runtime errors');
  await fs.writeFile(path.join(run,'browser-results.json'),JSON.stringify(results,null,2));console.log(JSON.stringify(results));
-}catch(error){results.push({check:'journey',passed:false,error:String(error)});await fs.writeFile(path.join(run,'browser-results.json'),JSON.stringify(results,null,2));await page.screenshot({path:path.join(run,'failure.png'),fullPage:true});await fs.writeFile(path.join(run,'failure.txt'),await page.locator('body').innerText());await fs.writeFile(path.join(run,'console.json'),JSON.stringify({errors,logs},null,2));try{await page.getByRole('button',{name:'插件',exact:true}).click({timeout:2000});await fs.writeFile(path.join(run,'plugin-diagnostics.txt'),await page.locator('body').innerText())}catch{}throw error}finally{diagnostics.abort();await graphLog;await browser.close()}
+}catch(error){results.push({check:'journey',passed:false,error:String(error)});await fs.writeFile(path.join(run,'browser-results.json'),JSON.stringify(results,null,2));await page.screenshot({path:path.join(run,'failure.png'),fullPage:true});await fs.writeFile(path.join(run,'failure.txt'),await page.locator('body').innerText());await fs.writeFile(path.join(run,'console.json'),JSON.stringify({errors,logs},null,2));try{await page.getByRole('button',{name:'插件',exact:true}).click({timeout:2000});await new Promise(resolve=>setTimeout(resolve,2500));await fs.writeFile(path.join(run,'plugin-diagnostics.txt'),await page.locator('body').innerText())}catch{}throw error}finally{diagnostics.abort();await graphLog;await browser.close()}

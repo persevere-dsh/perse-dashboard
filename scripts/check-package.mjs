@@ -7,4 +7,4 @@ assert.ok(!bundle.includes('node:fs'));assert.ok(!bundle.includes('setBypassCSP'
 const remote=await import('../lib/typert.remote-client.js');assert.equal(remote.default.descriptors.length,5);
 console.log('Package surface and generated Remote contract verified');
 
-for(const file of ['sim/browser.mjs','sim/model.mjs'])execFileSync(process.execPath,['--check',file]);
+for(const file of ['sim/browser.mjs','sim/model.mjs','sim/diagnostics.mjs'])execFileSync(process.execPath,['--check',file]);
