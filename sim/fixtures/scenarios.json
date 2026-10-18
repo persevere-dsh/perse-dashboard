@@ -292,6 +292,11 @@
       "id": "recovery",
       "description": "Durable state survives restart; in-progress work is not rerun",
       "seed": "empty"
+    },
+    {
+      "id": "ui-journeys",
+      "description": "Modal navigation, nested draft protection, stale edits, focus, responsive geometry and theme",
+      "seed": "dense"
     }
   ]
 }

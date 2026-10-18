@@ -15,6 +15,7 @@ const browser = await chromium.launch({
   }),
   context = await browser.newContext({
     viewport: { width: 1510, height: 1050 },
+    locale: 'zh-CN',
   }),
   page = await context.newPage(),
   results = [],
@@ -50,7 +51,12 @@ async function rpc(endpoint, payload = {}, target = page) {
   )
 }
 const snapshot = () => rpc('perseDashboard/snapshot')
+async function closeDetail(target = page) {
+  const close = target.getByRole('button', { name: '关闭详情', exact: true })
+  if (await close.isVisible()) await close.click()
+}
 async function board(target = page) {
+  await closeDetail(target)
   await target.getByText('工作看板', { exact: true }).first().click()
   await expect(
     target.getByRole('heading', { name: '工作看板', exact: true }),
@@ -252,7 +258,7 @@ try {
     check('agent autonomously claims through the real DSH tool then reports')
   }
   // Automatic intake and completion are exercised through the visible production UI.
-  await page.getByRole('button', { name: '关闭详情', exact: true }).click()
+  await closeDetail()
   await page.getByRole('button', { name: '新建任务', exact: true }).click()
   const automatic = page.locator('form.pd-create')
   const autoTitle = 'Automatic native intake and independent review'
@@ -270,6 +276,7 @@ try {
       'auto-result.txt contains exactly ' +
         (runtime.lane === 'live' ? 'DSH_AUTO_LIVE_OK' : 'DSH_AUTO_NATIVE_OK'),
     )
+  await automatic.getByText('高级完成规则', { exact: true }).click()
   await automatic
     .getByLabel('完成规则提示词', { exact: true })
     .fill(
@@ -290,6 +297,7 @@ try {
   ).toBeVisible()
   const intake = (await snapshot()).tasks.find((t) => t.title === autoTitle)
   expect(intake.status).toBe('triage')
+  await closeDetail()
   await page
     .getByRole('button', { name: '持续分析与处理', exact: true })
     .click()
@@ -334,10 +342,12 @@ try {
   check(
     'visible intake → native analysis → atomic claim → execution → separate reviewer → file checks → automatic completion',
   )
+  await page.locator('.pd-card').filter({ hasText: autoTitle }).click()
   await expect(page.locator('.pd-detail')).toContainText('自动完成')
   await page
     .locator('.pd-detail')
     .screenshot({ path: path.join(run, 'automatic-evidence.png') })
+  await closeDetail()
   await page.getByRole('button', { name: '暂停后续议题', exact: true }).click()
   check('watcher stays armed between issues and can be paused from the UI')
   await fs.writeFile(
@@ -352,12 +362,12 @@ try {
       2,
     ),
   )
-  await page.getByRole('button', { name: '关闭详情', exact: true }).click()
+  await closeDetail()
   await page.locator('.pd-card').filter({ hasText: title }).click()
   await page
     .locator('.pd-detail')
     .screenshot({ path: path.join(run, 'task-evidence.png') })
-  await page.getByRole('button', { name: '关闭详情', exact: true }).click()
+  await closeDetail()
   await page.screenshot({
     path: path.join(run, 'dashboard.png'),
     fullPage: true,
@@ -379,6 +389,7 @@ try {
     second.locator('.pd-card').filter({ hasText: title }),
   ).toHaveCount(0)
   check('task changes stream to another client')
+  await closeDetail()
   await page.getByLabel('显示归档', { exact: true }).check()
   await page.locator('.pd-card').filter({ hasText: title }).click()
   await page.getByRole('button', { name: '恢复', exact: true }).click()
