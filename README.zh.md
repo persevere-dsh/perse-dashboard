@@ -16,9 +16,9 @@
 npm ci
 npm run check
 npm pack
-dsh plugin --profile web add ./perse-dashboard-1.1.0.tgz
+dsh plugin --profile web add ./perse-dashboard-1.2.1.tgz
 # 本机 Desktop 未将 dsh 加入 PATH 时：
-scripts/dsh plugin --profile desktop add ./perse-dashboard-1.1.0.tgz
+scripts/dsh plugin --profile desktop add ./perse-dashboard-1.2.1.tgz
 ```
 
 重启所选实例后，从原生侧栏打开“工作看板”。必须使用打包后的 tgz 安装，不使用目录链接。此仓库不会修改 DSH 应用文件。
@@ -44,7 +44,7 @@ npm run sim -- --lane live
 npm run sim -- --lane native --keep
 ```
 
-`lab` 复用正式 BoardController、Dispatcher 和 CompletionCoordinator，提供完整任务、会话、工作区数据与 19 个可选场景；覆盖故障、断线、重放、恢复及自动化分支。它只模拟 DSH 执行与传输，不发送外部模型请求；`--scenario offline` 可聚焦单场景。对照依据和边界见 [Hermex 审计](docs/hermex-parity.md)。
+`lab` 复用正式 BoardController、Dispatcher 和 CompletionCoordinator，提供完整任务、会话、工作区数据与 20 个可选场景；覆盖故障、断线、重放、恢复及自动化分支。它只模拟 DSH 执行与传输，不发送外部模型请求；`--scenario offline` 可聚焦单场景。对照依据和边界见 [Hermex 审计](docs/hermex-parity.md)。
 
 `native` 运行真实 DSH Host、原生页面、Gateway、Agent loop、工具和存储，仅模型使用确定性适配器，不发送外部模型请求。`live` 临时复制凭据到隔离目录，以真实模型写入并读回测试文件，清理时删除凭据副本。设置 `PERSEVERE_DSH_CREDENTIALS` 可指定其他凭据文件。结果、截图和失败日志保存在 `.build/sim/<run-id>/`，以 `summary.json` 为入口。
 

@@ -38,7 +38,22 @@ const api = async (name, body) => {
 const data = () => api('/data')
 const task = async (id) =>
   (await data()).snapshot.tasks.find((t) => t.id === id)
+async function closeDetail() {
+  const close = page.getByRole('button', { name: 'Close details', exact: true })
+  if (await close.isVisible()) await close.click()
+}
+async function outside(name) {
+  await closeDetail()
+  await page.getByRole('button', { name, exact: true }).click()
+}
+async function openTask(id) {
+  await page
+    .locator('.pd-card')
+    .filter({ hasText: (await task(id)).title })
+    .click()
+}
 async function choose(id) {
+  await closeDetail()
   await page.getByLabel('Lab scenario', { exact: true }).selectOption(id)
   await expect
     .poll(async () => {
@@ -64,6 +79,7 @@ async function create(
   title,
   { mode = 'reviewed', manual = false, intake = true, checks = false } = {},
 ) {
+  await closeDetail()
   await page
     .getByRole('combobox', { name: 'All workspaces', exact: true })
     .selectOption('alpha')
@@ -84,6 +100,7 @@ async function create(
     .setChecked(manual)
   await f.getByLabel('Completion policy', { exact: true }).selectOption(mode)
   if (checks) {
+    await f.getByText('Advanced completion rules', { exact: true }).click()
     await f
       .getByRole('button', { name: 'Add machine check', exact: true })
       .click()
@@ -101,13 +118,14 @@ async function create(
   return (await data()).snapshot.tasks.find((t) => t.title === title)
 }
 async function queue(id, status) {
-  await page.getByRole('button', { name: 'Start queue', exact: true }).click()
+  await outside('Start queue')
   await expect
     .poll(async () => (await task(id)).status, { timeout: 10000 })
     .toBe(status)
   await expect
     .poll(async () => (await data()).snapshot.dispatch.enabled)
     .toBe(false)
+  await openTask(id)
 }
 async function check(name, fn) {
   await fn()
@@ -289,6 +307,9 @@ try {
         .selectOption('alpha')
       await expect(cards).toHaveCount(5)
       await cards.filter({ hasText: 'Implement accepted scope' }).click()
+      await page
+        .getByRole('tab', { name: 'Properties & rules', exact: true })
+        .click()
       await page.getByText('Edit task', { exact: true }).click()
       await page.getByLabel('Title', { exact: true }).fill('Edited scope')
       await page
@@ -324,16 +345,12 @@ try {
       })
       await queue(verified.id, 'done')
       expect((await task(verified.id)).completion.kind).toBe('verified')
-      await page
-        .getByRole('button', { name: 'Watch and process issues', exact: true })
-        .click()
+      await outside('Watch and process issues')
       const watched = await create('New issue while watching')
       await expect
         .poll(async () => (await task(watched.id)).status)
         .toBe('done')
-      await page
-        .getByRole('button', { name: 'Pause subsequent issues', exact: true })
-        .click()
+      await outside('Pause subsequent issues')
       expect((await data()).snapshot.dispatch.enabled).toBe(false)
       results
         .at(-1)
@@ -346,23 +363,18 @@ try {
         id: paused.id,
         script: { holdPhase: 'execution' },
       })
-      await page
-        .getByRole('button', { name: 'Watch and process issues', exact: true })
-        .click()
+      await outside('Watch and process issues')
       await expect
         .poll(async () => (await task(paused.id)).status)
         .toBe('in-progress')
+      await openTask(paused.id)
       await expect(
         page.getByLabel('Assigned session', { exact: true }),
       ).toBeDisabled()
       await expect(page.getByText('Edit task', { exact: true })).toHaveCount(0)
-      await page
-        .getByRole('button', { name: 'Pause subsequent issues', exact: true })
-        .click()
+      await outside('Pause subsequent issues')
       const later = await create('Remains queued after pause')
-      await page
-        .getByRole('button', { name: 'Release active phase', exact: true })
-        .click()
+      await outside('Release active phase')
       await expect.poll(async () => (await task(paused.id)).status).toBe('done')
       expect((await task(later.id)).status).toBe('triage')
       await api('/command/update', {
@@ -505,6 +517,218 @@ try {
         .at(-1)
         .assertions.push(
           'Partial, refused, high-risk, failed, risky and absent reviewer plus wrong file cannot reach done',
+        )
+    } else if (id === 'ui-journeys') {
+      await expect(cards).toHaveCount(7)
+      const noPageOverflow = async () =>
+        expect(
+          await page.evaluate(
+            () =>
+              document.documentElement.scrollWidth <=
+              document.documentElement.clientWidth + 1,
+          ),
+        ).toBe(true)
+      await noPageOverflow()
+      const originalWidth = await page
+        .locator('.pd-columns')
+        .evaluate((el) => el.getBoundingClientRect().width)
+      const runningTask = await task('fixture-in-progress')
+      const claimedSession = (await data()).sessions.find(
+        (s) => s.id === runningTask.sessionId,
+      )
+      await expect(cards.filter({ hasText: runningTask.title })).toContainText(
+        claimedSession.displayTitle,
+      )
+      const card = cards.filter({ hasText: 'Implement accepted scope' })
+      await card.click()
+      const dialog = page.getByRole('dialog', {
+        name: 'Implement accepted scope',
+        exact: true,
+      })
+      await expect(dialog).toBeVisible()
+      expect(
+        await page
+          .locator('.pd-columns')
+          .evaluate((el) => el.getBoundingClientRect().width),
+      ).toBe(originalWidth)
+      for (let n = 0; n < 18; n++) await page.keyboard.press('Tab')
+      expect(
+        await page.evaluate(() => !!document.activeElement.closest('dialog')),
+      ).toBe(true)
+      await page.keyboard.press('Escape')
+      await expect(dialog).toHaveCount(0)
+      await expect(card).toBeFocused()
+      await card.click()
+      await page.mouse.click(5, 450)
+      await expect(dialog).toHaveCount(0)
+      await expect(card).toBeFocused()
+      await card.click()
+      await page
+        .getByRole('tab', { name: 'Properties & rules', exact: true })
+        .click()
+      await page.getByText('Edit task', { exact: true }).click()
+      await page
+        .getByLabel('Title', { exact: true })
+        .fill('Unsaved local draft')
+      await page.keyboard.press('Escape')
+      await expect(
+        page.getByRole('alertdialog', {
+          name: 'Discard this draft?',
+          exact: true,
+        }),
+      ).toBeVisible()
+      await page
+        .getByRole('button', { name: 'Keep editing', exact: true })
+        .first()
+        .click()
+      await expect(page.getByLabel('Title', { exact: true })).toHaveValue(
+        'Unsaved local draft',
+      )
+      await page
+        .getByRole('button', { name: 'Open DSH session', exact: true })
+        .click()
+      await expect(page.getByRole('alertdialog')).toBeVisible()
+      await page
+        .getByRole('button', { name: 'Keep editing', exact: true })
+        .first()
+        .click()
+      await expect(page.getByLabel('Title', { exact: true })).toHaveValue(
+        'Unsaved local draft',
+      )
+      const previous = await task('fixture-todo')
+      await api('/command/update', {
+        requestId: crypto.randomUUID(),
+        id: previous.id,
+        expectedVersion: previous.version,
+        action: 'edit',
+        title: 'Changed remotely',
+      })
+      await expect(
+        page.getByRole('button', {
+          name: 'Reload latest version',
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(page.getByLabel('Title', { exact: true })).toHaveValue(
+        'Unsaved local draft',
+      )
+      await page
+        .getByRole('button', { name: 'Reload latest version', exact: true })
+        .click()
+      await expect(page.getByLabel('Title', { exact: true })).toHaveValue(
+        'Changed remotely',
+      )
+      await closeDetail()
+      await page.getByRole('button', { name: 'New task', exact: true }).click()
+      await page
+        .getByLabel('Title', { exact: true })
+        .fill('Protected creation draft')
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('alertdialog')).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(page.getByLabel('Title', { exact: true })).toHaveValue(
+        'Protected creation draft',
+      )
+      await page
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .last()
+        .click()
+      await page
+        .getByRole('button', { name: 'Discard draft', exact: true })
+        .click()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await expect(
+        page.getByRole('button', { name: 'New task', exact: true }),
+      ).toBeFocused()
+      expect(
+        (await data()).snapshot.tasks.some(
+          (t) => t.title === 'Protected creation draft',
+        ),
+      ).toBe(false)
+      await page.getByRole('button', { name: 'Task list', exact: true }).click()
+      await expect(page.locator('tbody tr')).toHaveCount(7)
+      await page
+        .getByRole('button', { name: 'Changed remotely', exact: true })
+        .click()
+      await expect(
+        page.getByRole('dialog', { name: 'Changed remotely', exact: true }),
+      ).toBeVisible()
+      await page
+        .getByRole('tab', { name: 'Activity ledger', exact: true })
+        .click()
+      await expect(page.locator('.pd-audit').first()).toContainText('edit')
+      await closeDetail()
+      await page
+        .getByRole('button', { name: 'Task board', exact: true })
+        .click()
+      await page
+        .getByLabel('All workspaces', { exact: true })
+        .selectOption('alpha')
+      await page.getByLabel('Issue budget', { exact: true }).fill('')
+      await expect(
+        page.getByRole('button', { name: 'Start queue', exact: true }),
+      ).toBeDisabled()
+      await page.getByLabel('Issue budget', { exact: true }).fill('2')
+      await page.screenshot({ path: path.join(run, 'ui-desktop-light.png') })
+      await page.getByLabel('Theme', { exact: true }).selectOption('dark')
+      await expect(cards.first()).toHaveCSS(
+        'background-color',
+        'rgb(18, 21, 26)',
+      )
+      await expect(cards.first()).toHaveCSS('color', 'rgb(233, 236, 240)')
+      await page.screenshot({ path: path.join(run, 'ui-desktop-dark.png') })
+      await cards.filter({ hasText: 'Changed remotely' }).click()
+      await page
+        .getByRole('tab', { name: 'Analysis & review', exact: true })
+        .click()
+      await page.keyboard.press('ArrowRight')
+      await expect(
+        page.getByRole('tab', { name: 'Properties & rules', exact: true }),
+      ).toHaveAttribute('aria-selected', 'true')
+      await page.setViewportSize({ width: 430, height: 850 })
+      await expect(
+        page.getByRole('button', { name: 'Close details', exact: true }),
+      ).toBeInViewport()
+      const box = await page.locator('.pd-detail').boundingBox()
+      expect(box.x).toBeGreaterThanOrEqual(0)
+      expect(box.x + box.width).toBeLessThanOrEqual(431)
+      expect(box.y).toBeGreaterThanOrEqual(0)
+      expect(box.y + box.height).toBeLessThanOrEqual(851)
+      await noPageOverflow()
+      await page.screenshot({ path: path.join(run, 'ui-narrow-dialog.png') })
+      await closeDetail()
+      await page.setViewportSize({ width: 1500, height: 1000 })
+      await page.getByLabel('Theme', { exact: true }).selectOption('light')
+      await api('/command/dispatch', {
+        workspaceId: 'beta',
+        enabled: true,
+        watch: true,
+        maxTasks: 7,
+      })
+      await expect(
+        page.getByRole('button', { name: 'Start queue', exact: true }),
+      ).toBeDisabled()
+      expect((await data()).snapshot.dispatch.workspaceId).toBe('beta')
+      await page
+        .getByLabel('All workspaces', { exact: true })
+        .selectOption('beta')
+      await expect(
+        page.getByLabel('Issue budget', { exact: true }),
+      ).toHaveValue('7')
+      await page.reload()
+      await page
+        .getByLabel('All workspaces', { exact: true })
+        .selectOption('beta')
+      await expect(
+        page.getByLabel('Issue budget', { exact: true }),
+      ).toHaveValue('7')
+      await page
+        .getByRole('button', { name: 'Pause subsequent issues', exact: true })
+        .click()
+      results
+        .at(-1)
+        .assertions.push(
+          'Native modal keeps board width; Escape/backdrop restore focus; nested draft protection covers close and Session navigation; stale edits retained; list/activity navigation; queue ownership and budget survive reload; both themes and narrow geometry',
         )
     } else if (id === 'recovery') {
       const completed = await create('Sessions survive recovery')

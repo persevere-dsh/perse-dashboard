@@ -1,5 +1,6 @@
 /** Pure components: only framework-provided hooks and injected commands. */
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { Dialog, DetailTabs } from './dialog.tsx'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {
   PropsRuntime,
@@ -79,8 +80,14 @@ export function Dashboard(props: Props) {
   const [creating, setCreating] = useState(false),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
-    [budget, setBudget] = useState(10)
+    [budget, setBudget] = useState('10'),
+    [detailTab, setDetailTab] = useState('overview'),
+    [createDirty, setCreateDirty] = useState(false),
+    [discard, setDiscard] = useState(false),
+    [discardTarget, setDiscardTarget] = useState<'create' | 'detail'>('create'),
+    [dirtyParts, setDirtyParts] = useState({ editor: false, evidence: false })
   const lastGood = useRef<DashboardSnapshot>()
+  const pendingNavigation = useRef<(() => void) | null>(null)
   const invalid = resource.value !== undefined && !validSnapshot(resource.value)
   if (validSnapshot(resource.value)) lastGood.current = resource.value
   const snapshot = lastGood.current,
@@ -107,7 +114,10 @@ export function Dashboard(props: Props) {
         .toLowerCase()
         .includes(query.toLowerCase()),
   )
-  const task = snapshot?.tasks.find((v) => v.id === selected),
+  const task = snapshot?.tasks.find(
+      (v) =>
+        v.id === selected && (!workspaceId || v.workspaceId === workspaceId),
+    ),
     running = sessions.filter(
       (s) => agentState.get(s.id)?.running ?? s.running,
     ).length
@@ -128,8 +138,10 @@ export function Dashboard(props: Props) {
     setError('')
     try {
       await fn()
+      return true
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
+      return false
     } finally {
       setBusy(false)
     }
@@ -147,37 +159,148 @@ export function Dashboard(props: Props) {
         requestId: crypto.randomUUID(),
       })
     })
+  const dispatch = snapshot?.dispatch
+  const ownsQueue =
+    !!workspace && dispatch?.workspaceId === workspace.workspaceId
+  const queueActive = !!dispatch?.enabled && ownsQueue
+  const otherQueueActive = !!dispatch?.enabled && !ownsQueue
+  const validBudget =
+    /^\d+$/.test(budget) && Number(budget) >= 1 && Number(budget) <= 100
+  useEffect(() => {
+    if (ownsQueue && dispatch) setBudget(String(dispatch.maxTasks))
+  }, [ownsQueue, dispatch?.maxTasks])
+  useEffect(() => {
+    setDetailTab('overview')
+    setDirtyParts({ editor: false, evidence: false })
+    setError('')
+  }, [selected])
+  const navigate = (next: () => void) => {
+    if (dirtyParts.editor || dirtyParts.evidence) {
+      pendingNavigation.current = next
+      setDiscardTarget('detail')
+      setDiscard(true)
+    } else {
+      setSelected(null)
+      next()
+    }
+  }
+  const openSession = (id: string) => navigate(() => props.openSession(id))
+  const handoff = (ws: string, id: string) =>
+    navigate(() => props.handoff(ws, id))
+  const closeCreate = () => {
+    if (!busy) {
+      setDiscardTarget('create')
+      createDirty ? setDiscard(true) : setCreating(false)
+    }
+  }
+  const closeDetail = () => {
+    if (!busy) {
+      pendingNavigation.current = null
+      setDiscardTarget('detail')
+      dirtyParts.editor || dirtyParts.evidence
+        ? setDiscard(true)
+        : setSelected(null)
+    }
+  }
+  const phase = (item: Task): Key => {
+    if (
+      item.analysisSessionId &&
+      agentState.get(item.analysisSessionId as never)?.running
+    )
+      return 'analyzing'
+    if (
+      item.reviewSessionId &&
+      agentState.get(item.reviewSessionId as never)?.running
+    )
+      return 'reviewing'
+    if (item.sessionId && agentState.get(item.sessionId as never)?.running)
+      return 'executing'
+    return item.status
+  }
+  const sessionTitle = (item: Task) => {
+    const id = item.sessionId ?? item.assignee
+    return id
+      ? (sessionState.byId[id as never]?.displayTitle ?? t('unavailable'))
+      : t('queue')
+  }
+  const detailMessage =
+    error ||
+    (resource.status === 'failed'
+      ? t('failed')
+      : invalid
+        ? t('incompatible')
+        : snapshot?.capabilities?.update === false
+          ? t('partial')
+          : '')
+  const detailError = detailMessage && (
+    <div role="alert" className="pd-banner">
+      {detailMessage}
+    </div>
+  )
   return (
     <main className="perse-dashboard" aria-label={t('nav')}>
       <header className="pd-header">
         <div>
-          <div className="pd-muted">{t('brand')}</div>
+          <span className="pd-eyebrow">PERSEVERE / DSH</span>
           <h1>{t('nav')}</h1>
-          <div className="pd-muted">{t('subtitle')}</div>
+          <p className="pd-muted">{t('subtitle')}</p>
         </div>
-        <button
-          className="pd-primary"
-          onClick={() => setCreating((v) => !v)}
-          disabled={!workspaces.length || !commandsAvailable}
-        >
-          {t('newTask')}
-        </button>
+        <div className="pd-header-actions">
+          <span className="pd-host">
+            <i className={`pd-dot ${commandsAvailable ? 'is-live' : ''}`} />
+            {t('host')}
+          </span>
+          <button
+            className="pd-primary"
+            onClick={() => {
+              setCreateDirty(false)
+              setCreating(true)
+            }}
+            disabled={!workspaces.length || !commandsAvailable}
+          >
+            <span aria-hidden="true">＋</span> {t('newTask')}
+          </button>
+        </div>
       </header>
-      <div className="pd-stats">
+      <section className="pd-stats" aria-label={t('overview')}>
         {[
-          [t('total'), tasks.length],
-          [t('active'), running],
-          [t('review'), tasks.filter((t) => t.status === 'in-review').length],
-          [t('tokens'), tokens.toLocaleString()],
-        ].map(([label, value]) => (
+          [t('total'), tasks.length, '▦'],
+          [t('active'), running, '◉'],
+          [
+            t('review'),
+            tasks.filter((item) => item.status === 'in-review').length,
+            '✓',
+          ],
+          [
+            t('tokens'),
+            new Intl.NumberFormat(undefined, {
+              notation: 'compact',
+              maximumFractionDigits: 1,
+            }).format(tokens),
+            '↗',
+          ],
+        ].map(([label, value, icon]) => (
           <div className="pd-stat" key={label}>
-            <span className="pd-muted">{label}</span>
-            <strong>{value}</strong>
+            <div>
+              <span>{label}</span>
+              <span className="pd-stat-icon" aria-hidden="true">
+                {icon}
+              </span>
+            </div>
+            <strong
+              title={
+                label === t('tokens') ? tokens.toLocaleString() : undefined
+              }
+            >
+              {value}
+            </strong>
           </div>
         ))}
-      </div>
+      </section>
       {resource.status === 'loading' && !snapshot && !invalid && (
-        <p role="status">{t('loading')}</p>
+        <p role="status" className="pd-empty">
+          {t('loading')}
+        </p>
       )}
       {resource.status === 'failed' && (
         <div role="alert" className="pd-banner">
@@ -194,26 +317,30 @@ export function Dashboard(props: Props) {
           {t('partial')}
         </div>
       )}
-      {error && (
+      {!task && !creating && error && (
         <div role="alert" className="pd-banner">
           {error}
         </div>
       )}
-      {snapshot?.dispatch.error && (
-        <div className="pd-banner">
-          {t('dispatchError')}: {snapshot.dispatch.error}
+      {dispatch?.error && (
+        <div className="pd-banner" role="status">
+          {t('dispatchError')}: {dispatch.error}
         </div>
       )}
       <div className="pd-toolbar">
-        <button aria-pressed={tab === 'board'} onClick={() => setTab('board')}>
-          {t('board')}
-        </button>
-        <button
-          aria-pressed={tab === 'sessions'}
-          onClick={() => setTab('sessions')}
-        >
-          {t('sessions')}
-        </button>
+        <div className="pd-segments" role="group" aria-label={t('view')}>
+          {(['board', 'list', 'sessions'] as const).map((v) => (
+            <button key={v} aria-pressed={tab === v} onClick={() => setTab(v)}>
+              {t(
+                v === 'board'
+                  ? 'board'
+                  : v === 'list'
+                    ? 'taskList'
+                    : 'sessions',
+              )}
+            </button>
+          ))}
+        </div>
         <select
           aria-label={t('all')}
           value={workspaceId}
@@ -226,14 +353,17 @@ export function Dashboard(props: Props) {
             </option>
           ))}
         </select>
-        <input
-          type="search"
-          aria-label={t('search')}
-          placeholder={t('search')}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <label className="pd-check">
+        <div className="pd-search">
+          <span aria-hidden="true">⌕</span>
+          <input
+            type="search"
+            aria-label={t('search')}
+            placeholder={t('search')}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+        <label className="pd-check pd-filter-check">
           <input
             type="checkbox"
             checked={archived}
@@ -242,340 +372,278 @@ export function Dashboard(props: Props) {
           {t('showArchived')}
         </label>
       </div>
-      {workspace && (
-        <div className="pd-toolbar">
-          <button
-            title={t('autoHint')}
-            disabled={busy || !commandsAvailable}
-            onClick={() =>
-              act(() =>
-                props.dispatch({
-                  workspaceId: workspace.workspaceId,
-                  enabled: !snapshot?.dispatch.enabled,
-                }),
-              )
-            }
+      <section className="pd-automation" aria-label={t('automation')}>
+        <div className="pd-automation-summary">
+          <span
+            className={`pd-status-icon ${queueActive ? 'is-live' : ''}`}
+            aria-hidden="true"
           >
-            {t(snapshot?.dispatch.enabled ? 'stop' : 'auto')}
-          </button>
-          <span className="pd-muted">{t('autoHint')}</span>
-        </div>
-      )}
-      {workspace && (
-        <div className="pd-toolbar">
-          <label>
-            {t('budget')}{' '}
-            <input
-              aria-label={t('budget')}
-              type="number"
-              min={1}
-              max={100}
-              value={budget}
-              onChange={(e) => setBudget(Number(e.target.value))}
-            />
-          </label>
-          <button
-            disabled={busy || !commandsAvailable}
-            onClick={() =>
-              act(() =>
-                props.dispatch({
-                  workspaceId: workspace.workspaceId,
-                  enabled: !(
-                    snapshot?.dispatch.enabled && snapshot.dispatch.watch
-                  ),
-                  watch: true,
-                  maxTasks: budget,
-                }),
-              )
-            }
-          >
-            {t(
-              snapshot?.dispatch.enabled && snapshot.dispatch.watch
-                ? 'pauseWatch'
-                : 'watch',
-            )}
-          </button>
-          <span className="pd-muted">
-            {t('pipelineHelp')} {snapshot?.dispatch.processed ?? 0}/
-            {snapshot?.dispatch.maxTasks ?? budget}
+            ↻
           </span>
+          <div>
+            <strong>{t('automation')}</strong>
+            <p className="pd-muted">
+              {!workspace
+                ? t('chooseWorkspace')
+                : otherQueueActive
+                  ? t('otherQueue')
+                  : queueActive
+                    ? `${t('processing')} · ${dispatch?.processed}/${dispatch?.maxTasks}`
+                    : t('automationHelp')}
+            </p>
+          </div>
         </div>
-      )}
-      {creating && (
-        <CreateForm
-          key={workspaceId}
-          t={t}
-          workspaces={workspaces}
-          sessions={sessionState.ids
-            .filter((id) => !phaseSessions.has(id))
-            .map((id) => sessionState.byId[id])}
-          selectedWorkspace={workspaceId}
-          busy={busy}
-          close={() => setCreating(false)}
-          submit={(r) =>
-            act(async () => {
-              const created = await props.create(r)
-              setCreating(false)
-              setSelected(created.id)
-            })
-          }
-        />
-      )}
+        {workspace && (
+          <div className="pd-automation-actions">
+            <label className="pd-budget">
+              {t('budget')}
+              <input
+                aria-label={t('budget')}
+                type="number"
+                min={1}
+                max={100}
+                value={budget}
+                onChange={(e) => setBudget(e.target.value)}
+                disabled={queueActive || otherQueueActive}
+                aria-invalid={!validBudget}
+              />
+            </label>
+            <button
+              disabled={
+                busy || !commandsAvailable || otherQueueActive || !validBudget
+              }
+              onClick={() =>
+                act(() =>
+                  props.dispatch({
+                    workspaceId: workspace.workspaceId,
+                    enabled: !queueActive,
+                    maxTasks: Number(budget),
+                  }),
+                )
+              }
+            >
+              {t(queueActive ? 'stop' : 'auto')}
+            </button>
+            <button
+              className={queueActive ? '' : 'pd-primary'}
+              disabled={
+                busy || !commandsAvailable || otherQueueActive || !validBudget
+              }
+              onClick={() =>
+                act(() =>
+                  props.dispatch({
+                    workspaceId: workspace.workspaceId,
+                    enabled: !(queueActive && dispatch?.watch),
+                    watch: true,
+                    maxTasks: Number(budget),
+                  }),
+                )
+              }
+            >
+              {t(queueActive && dispatch?.watch ? 'pauseWatch' : 'watch')}
+            </button>
+          </div>
+        )}
+      </section>
       {tab === 'board' ? (
-        <div className={`pd-layout ${task ? 'pd-selected' : ''}`}>
-          <div className="pd-columns">
+        <div className="pd-layout">
+          <div className="pd-columns" aria-label={t('board')}>
             {statuses.map((status) => (
               <section
                 className="pd-column"
                 key={status}
                 aria-label={t(status)}
+                data-status={status}
               >
                 <h2>
-                  {t(status)}
-                  <span>{tasks.filter((t) => t.status === status).length}</span>
+                  <span>
+                    <i className="pd-dot" />
+                    {t(status)}
+                  </span>
+                  <span className="pd-count">
+                    {tasks.filter((item) => item.status === status).length}
+                  </span>
                 </h2>
-                {tasks
-                  .filter((t) => t.status === status)
-                  .map((task) => (
-                    <button
-                      className="pd-card"
-                      key={task.id}
-                      aria-pressed={selected === task.id}
-                      onClick={() => setSelected(task.id)}
-                    >
-                      <span className="pd-card-meta">
-                        <span>
-                          {t(
-                            (['low', 'normal', 'high'] as Key[])[
-                              task.priority
-                            ]!,
+                <div className="pd-column-cards">
+                  {tasks
+                    .filter((item) => item.status === status)
+                    .map((item) => (
+                      <button
+                        className="pd-card"
+                        key={item.id}
+                        aria-pressed={selected === item.id}
+                        onClick={() => setSelected(item.id)}
+                      >
+                        <span className="pd-card-meta">
+                          <span
+                            className={`pd-priority priority-${item.priority}`}
+                          >
+                            {t(
+                              (['low', 'normal', 'high'] as Key[])[
+                                item.priority
+                              ]!,
+                            )}
+                          </span>
+                          <code>{item.id.slice(0, 8)}</code>
+                        </span>
+                        <strong>{item.title}</strong>
+                        <span className="pd-card-description">
+                          {item.description || t('noDescription')}
+                        </span>
+                        <span className="pd-card-tags">
+                          <span className="pd-badge">{t(phase(item))}</span>
+                          {item.needsManual && (
+                            <span className="pd-badge">{t('manual')}</span>
                           )}
                         </span>
-                        <span>{task.id.slice(0, 8)}</span>
-                      </span>
-                      <strong>{task.title}</strong>
-                      <small>
-                        {workspaces.find(
-                          (w) => w.workspaceId === task.workspaceId,
-                        )?.title ?? t('noWorkspace')}
-                      </small>
-                      <span className="pd-card-meta" style={{ marginTop: 10 }}>
-                        <span>
-                          {task.assignee
-                            ? (sessionState.byId[task.assignee as never]
-                                ?.displayTitle ?? t('unavailable'))
-                            : t('queue')}
+                        <span className="pd-progress" aria-hidden="true">
+                          <span
+                            style={{
+                              width: `${item.criteria.length ? (item.checked.filter(Boolean).length / item.criteria.length) * 100 : 0}%`,
+                            }}
+                          />
                         </span>
-                        <span>
-                          {task.checked.filter(Boolean).length}/
-                          {task.criteria.length}
+                        <span className="pd-card-meta">
+                          <small title={sessionTitle(item)}>
+                            {sessionTitle(item)}
+                          </small>
+                          <span>
+                            {item.checked.filter(Boolean).length}/
+                            {item.criteria.length}
+                          </span>
                         </span>
-                      </span>
-                    </button>
-                  ))}
+                      </button>
+                    ))}
+                </div>
+                {!tasks.some((item) => item.status === status) && (
+                  <p className="pd-column-empty">—</p>
+                )}
               </section>
             ))}
           </div>
-          {task && (
-            <aside className="pd-detail">
-              <div
-                className="pd-actions"
-                style={{ justifyContent: 'space-between', marginTop: 0 }}
-              >
-                <span className="pd-muted">
-                  {t('details')} · {t('version')} {task.version}
-                </span>
-                <button
-                  aria-label={t('close')}
-                  onClick={() => setSelected(null)}
-                >
-                  ×
-                </button>
-              </div>
-              <h2>{task.title}</h2>
-              {task.completion && (
-                <p className="pd-badge">
-                  {t('completionRecord')}:{' '}
-                  {task.completion.kind === 'human'
-                    ? t('manual')
-                    : t('automaticDone')}{' '}
-                  · {task.completion.ruleVersion}
-                </p>
-              )}
-              {task.completionPolicy && (
-                <details className="pd-policy">
-                  <summary>
-                    {t('completionMode')}: {t(task.completionPolicy.mode)}
-                  </summary>
-                  <p className="pd-muted">{t('completionHelp')}</p>
-                  <h3>{t('completionInstructions')}</h3>
-                  <pre>{task.completionPolicy.instructions || '—'}</pre>
-                  <h3>{t('machineChecks')}</h3>
-                  {task.completionPolicy.checks.map((c, i) => (
-                    <div key={i}>
-                      <p>
-                        {c.criterion + 1}. {c.path} · {c.kind}
-                      </p>
-                      <pre>{c.expected}</pre>
-                    </div>
-                  ))}
-                  {task.completion?.checks?.map((r, i) => (
-                    <p key={i}>
-                      {r.criterion + 1}. {r.passed ? '✓' : '✗'} {r.evidence}
-                    </p>
-                  ))}
-                </details>
-              )}
-              {task.analysis && (
-                <section aria-label={t('analysis')}>
-                  <h3>{t('analysis')}</h3>
-                  <p>{task.analysis.summary}</p>
-                  <p>
-                    {task.analysis.risk} · {task.analysis.route}
-                  </p>
-                  <ol>
-                    {task.analysis.plan.map((step, i) => (
-                      <li key={i}>{step}</li>
-                    ))}
-                  </ol>
-                  {task.analysis.questions.map((q, i) => (
-                    <p key={i}>{q}</p>
-                  ))}
-                </section>
-              )}
-              {task.automationNote && (
-                <div role="status" className="pd-banner">
-                  {task.automationNote}
-                </div>
-              )}
-              {task.review && (
-                <section aria-label={t('reviewResult')}>
-                  <h3>
-                    {t('reviewResult')}: {task.review.verdict}
-                  </h3>
-                  <p>{task.review.evidence}</p>
-                  {task.review.results.map((r, i) => (
-                    <p key={i}>
-                      {r.criterion + 1}. {r.passed ? '✓' : '✗'} {r.evidence}
-                    </p>
-                  ))}
-                </section>
-              )}
-
-              {['todo', 'triage', 'needs-info'].includes(task.status) &&
-                !task.archived && (
-                  <TaskEditor
-                    key={`editor:${task.id}:${task.version}`}
-                    task={task}
-                    t={t}
-                    busy={busy || linkedRunning || !commandsAvailable}
-                    save={(change) =>
-                      mutation(task, { action: 'edit', ...change })
-                    }
-                  />
-                )}
-              <p className="pd-muted" style={{ whiteSpace: 'pre-wrap' }}>
-                {task.description}
-              </p>
-              <label className="pd-field">
-                {t('assignee')}
-                <select
-                  aria-label={t('assignee')}
-                  value={task.assignee ?? ''}
-                  disabled={
-                    busy ||
-                    linkedRunning ||
-                    !commandsAvailable ||
-                    task.archived ||
-                    task.status === 'in-progress' ||
-                    task.status === 'done'
-                  }
-                  onChange={(e) =>
-                    mutation(task, {
-                      action: 'assign',
-                      assignee: e.target.value || null,
-                    })
-                  }
-                >
-                  <option value="">{t('queue')}</option>
-                  {sessionState.ids
-                    .filter((id) => !phaseSessions.has(id))
-                    .map((id) => sessionState.byId[id])
-                    .filter((s) =>
-                      workspaces
-                        .find((w) => w.workspaceId === task.workspaceId)
-                        ?.sessionIds.includes(s.id),
-                    )
-                    .map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.displayTitle}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <p className="pd-muted">{t('assignmentHelp')}</p>
-              {task.criteria.map((criterion, i) => (
-                <label key={i} className="pd-check">
-                  <input
-                    type="checkbox"
-                    checked={task.checked[i]}
-                    disabled={
-                      busy ||
-                      linkedRunning ||
-                      !commandsAvailable ||
-                      task.archived ||
-                      task.status !== 'in-review'
-                    }
-                    onChange={(e) =>
-                      mutation(task, {
-                        action: 'edit',
-                        checked: task.checked.map((v, n) =>
-                          n === i ? e.target.checked : v,
-                        ),
-                      })
-                    }
-                  />
-                  {criterion}
-                </label>
-              ))}
-              <Evidence
-                key={`evidence:${task.id}:${task.version}`}
-                task={task}
-                t={t}
-                busy={busy || linkedRunning || !commandsAvailable}
-                save={(evidence) =>
-                  mutation(task, { action: 'edit', evidence })
-                }
-              />
-              <label className="pd-field">
-                {t('move')}
-                <select
-                  value={task.status}
-                  disabled={
-                    busy ||
-                    linkedRunning ||
-                    !commandsAvailable ||
-                    task.archived ||
-                    task.status === 'done'
-                  }
-                  onChange={(e) =>
-                    mutation(task, {
-                      action: 'move',
-                      status: e.target.value as TaskStatus,
-                    })
-                  }
-                >
-                  {statuses.map((s) => (
-                    <option
-                      key={s}
-                      value={s}
-                      disabled={s === 'done' || s === 'in-progress'}
+          <p className="pd-scroll-hint">{t('boardHint')}</p>
+        </div>
+      ) : tab === 'list' ? (
+        <div className="pd-table-wrap">
+          <table className="pd-list">
+            <thead>
+              <tr>
+                <th>{t('title')}</th>
+                <th>{t('status')}</th>
+                <th>{t('assignee')}</th>
+                <th>{t('criteriaProgress')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.map((item) => (
+                <tr key={item.id}>
+                  <td>
+                    <button
+                      className="pd-text-button"
+                      onClick={() => setSelected(item.id)}
                     >
-                      {t(s)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                      {item.title}
+                    </button>
+                    <small className="pd-muted">{item.id.slice(0, 8)}</small>
+                  </td>
+                  <td>
+                    <span className="pd-badge" data-status={item.status}>
+                      {t(phase(item))}
+                    </span>
+                  </td>
+                  <td>{sessionTitle(item)}</td>
+                  <td>
+                    {item.checked.filter(Boolean).length}/{item.criteria.length}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="pd-table-wrap">
+          <table className="pd-list">
+            <thead>
+              <tr>
+                <th>{t('sessions')}</th>
+                <th>{t('sessionState')}</th>
+                <th>{t('updated')}</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {sessions
+                .filter((s) =>
+                  s.displayTitle.toLowerCase().includes(query.toLowerCase()),
+                )
+                .map((s) => {
+                  const state = agentState.get(s.id)
+                  return (
+                    <tr key={s.id}>
+                      <td>
+                        {s.displayTitle}
+                        <div className="pd-muted">{s.cwd}</div>
+                      </td>
+                      <td>
+                        <span className="pd-badge">
+                          {t(
+                            state?.pendingInteraction
+                              ? 'waiting'
+                              : (state?.running ?? s.running)
+                                ? 'running'
+                                : 'idle',
+                          )}
+                        </span>
+                      </td>
+                      <td>{new Date(s.updatedAt).toLocaleString()}</td>
+                      <td>
+                        <button onClick={() => openSession(s.id)}>
+                          {t('openSession')}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {snapshot && tab !== 'sessions' && !tasks.length && (
+        <div className="pd-empty">
+          <DashboardIcon />
+          <h3>{t(query ? 'filteredEmpty' : 'empty')}</h3>
+          <p>{t(query ? 'filterHelp' : 'createHelp')}</p>
+          {!query && (
+            <button
+              disabled={!commandsAvailable || !workspaces.length}
+              onClick={() => setCreating(true)}
+            >
+              {t('firstTask')}
+            </button>
+          )}
+        </div>
+      )}
+      {tab === 'sessions' && !sessions.length && (
+        <p className="pd-empty">{t('noSessions')}</p>
+      )}
+      {!workspaces.length && <p className="pd-empty">{t('noWorkspace')}</p>}
+      <footer className="pd-footer">
+        <span>
+          <i className={`pd-dot ${commandsAvailable ? 'is-live' : ''}`} />
+          {t('host')}
+        </span>
+        <span>{t('brand')}</span>
+      </footer>
+      {task && !creating && (
+        <Dialog
+          className="pd-detail"
+          title={task.title}
+          description={`${t(task.status)} · ${task.id.slice(0, 8)} · ${t('version')} ${task.version}`}
+          closeLabel={t('close')}
+          onClose={closeDetail}
+          footer={
+            <>
+              {' '}
               <div className="pd-actions">
                 {['todo', 'triage', 'needs-info', 'blocked'].includes(
                   task.status,
@@ -621,21 +689,6 @@ export function Dashboard(props: Props) {
                       {t('verify')}
                     </button>
                   )}
-                {task.analysisSessionId && (
-                  <button
-                    onClick={() => props.openSession(task.analysisSessionId!)}
-                  >
-                    {t('openAnalysis')}
-                  </button>
-                )}
-                {task.reviewSessionId && (
-                  <button
-                    onClick={() => props.openSession(task.reviewSessionId!)}
-                  >
-                    {t('openReview')}
-                  </button>
-                )}
-
                 <button
                   disabled={
                     busy ||
@@ -645,7 +698,7 @@ export function Dashboard(props: Props) {
                     task.status !== 'todo' ||
                     !!task.assignee
                   }
-                  onClick={() => props.handoff(task.workspaceId, task.id)}
+                  onClick={() => handoff(task.workspaceId, task.id)}
                 >
                   {t('handoff')}
                 </button>
@@ -657,7 +710,7 @@ export function Dashboard(props: Props) {
                       ]
                     }
                     onClick={() =>
-                      props.openSession((task.sessionId ?? task.assignee)!)
+                      openSession((task.sessionId ?? task.assignee)!)
                     }
                   >
                     {t('openSession')}
@@ -667,7 +720,12 @@ export function Dashboard(props: Props) {
                   <button
                     className="pd-primary"
                     disabled={
-                      busy || !task.evidence || !task.checked.every(Boolean)
+                      busy ||
+                      linkedRunning ||
+                      !commandsAvailable ||
+                      task.archived ||
+                      !task.evidence ||
+                      !task.checked.every(Boolean)
                     }
                     onClick={() => mutation(task, { action: 'accept' })}
                   >
@@ -700,75 +758,395 @@ export function Dashboard(props: Props) {
                   {t(task.archived ? 'restore' : 'archive')}
                 </button>
               </div>
-              <h3 className="pd-muted">{t('audit')}</h3>
-              {snapshot?.ledger
-                .filter((a) => a.taskId === task.id)
-                .slice(-8)
-                .reverse()
-                .map((a) => (
-                  <div className="pd-audit" key={a.seq}>
-                    {a.action} ·{' '}
-                    {a.actor === 'human' ? t('brand') : a.actor.slice(0, 16)}
-                    <br />
-                    {new Date(a.time).toLocaleString()}
+            </>
+          }
+        >
+          {detailError}
+          {task.completion && (
+            <div className="pd-receipt">
+              <span className="pd-status-icon is-live">✓</span>
+              <div>
+                <strong>
+                  {t('completionRecord')}:{' '}
+                  {task.completion.kind === 'human'
+                    ? t('manual')
+                    : t('automaticDone')}
+                </strong>
+                <p>
+                  {new Date(task.completion.time).toLocaleString()} ·{' '}
+                  {task.completion.ruleVersion} ·{' '}
+                  {task.checked.filter(Boolean).length}/{task.criteria.length}
+                </p>
+              </div>
+            </div>
+          )}
+          <DetailTabs
+            value={detailTab}
+            change={setDetailTab}
+            labels={[
+              ['overview', t('overview')],
+              ['analysis', t('analysisReview')],
+              ['properties', t('properties')],
+              ['activity', t('audit')],
+            ]}
+          />
+          <section
+            role="tabpanel"
+            id="pd-panel-overview"
+            aria-labelledby="pd-tab-overview"
+            hidden={detailTab !== 'overview'}
+          >
+            <div className="pd-phase-grid">
+              {(
+                [
+                  [t('analysis'), task.analysisSessionId],
+                  [t('execution'), task.sessionId ?? task.assignee],
+                  [t('reviewResult'), task.reviewSessionId],
+                ] as const
+              ).map(([label, id]) => (
+                <div className="pd-phase-card" key={label}>
+                  <span className="pd-muted">{label}</span>
+                  <strong>
+                    {id
+                      ? (sessionState.byId[id as never]?.displayTitle ??
+                        t('unavailable'))
+                      : t('notStarted')}
+                  </strong>
+                  {id && (
+                    <button onClick={() => openSession(id)}>
+                      {t(
+                        label === t('analysis')
+                          ? 'openAnalysis'
+                          : label === t('reviewResult')
+                            ? 'openReview'
+                            : 'executionSession',
+                      )}{' '}
+                      ↗
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <section className="pd-section">
+              <h3>{t('description')}</h3>{' '}
+              <p className="pd-muted" style={{ whiteSpace: 'pre-wrap' }}>
+                {task.description}
+              </p>
+            </section>
+            <section className="pd-section">
+              <h3>
+                {t('criteriaProgress')}{' '}
+                <span className="pd-muted">
+                  {task.checked.filter(Boolean).length}/{task.criteria.length}
+                </span>
+              </h3>{' '}
+              {task.criteria.map((criterion, i) => (
+                <label key={i} className="pd-check">
+                  <input
+                    type="checkbox"
+                    checked={task.checked[i]}
+                    disabled={
+                      busy ||
+                      linkedRunning ||
+                      !commandsAvailable ||
+                      task.archived ||
+                      task.status !== 'in-review'
+                    }
+                    onChange={(e) =>
+                      mutation(task, {
+                        action: 'edit',
+                        checked: task.checked.map((v, n) =>
+                          n === i ? e.target.checked : v,
+                        ),
+                      })
+                    }
+                  />
+                  {criterion}
+                </label>
+              ))}
+              <Evidence
+                key={`evidence:${task.id}`}
+                task={task}
+                t={t}
+                busy={busy || linkedRunning || !commandsAvailable}
+                dirty={(value) =>
+                  setDirtyParts((old) =>
+                    old.evidence === value ? old : { ...old, evidence: value },
+                  )
+                }
+                save={(evidence, version) =>
+                  mutation({ ...task, version }, { action: 'edit', evidence })
+                }
+              />
+            </section>
+          </section>
+          <section
+            role="tabpanel"
+            id="pd-panel-analysis"
+            aria-labelledby="pd-tab-analysis"
+            hidden={detailTab !== 'analysis'}
+          >
+            {' '}
+            {task.analysis && (
+              <section aria-label={t('analysis')}>
+                <h3>{t('analysis')}</h3>
+                <p>{task.analysis.summary}</p>
+                <p>
+                  {task.analysis.risk} · {task.analysis.route}
+                </p>
+                <ol>
+                  {task.analysis.plan.map((step, i) => (
+                    <li key={i}>{step}</li>
+                  ))}
+                </ol>
+                {task.analysis.questions.map((q, i) => (
+                  <p key={i}>{q}</p>
+                ))}
+              </section>
+            )}
+            {task.automationNote && (
+              <div role="status" className="pd-banner">
+                {task.automationNote}
+              </div>
+            )}
+            {task.review && (
+              <section aria-label={t('reviewResult')}>
+                <h3>
+                  {t('reviewResult')}: {task.review.verdict}
+                </h3>
+                <p>{task.review.evidence}</p>
+                {task.review.results.map((r, i) => (
+                  <p key={i}>
+                    {r.criterion + 1}. {r.passed ? '✓' : '✗'} {r.evidence}
+                  </p>
+                ))}
+              </section>
+            )}
+            {!task.analysis && !task.review && (
+              <p className="pd-empty">{t('notStarted')}</p>
+            )}
+          </section>
+          <section
+            role="tabpanel"
+            id="pd-panel-properties"
+            aria-labelledby="pd-tab-properties"
+            hidden={detailTab !== 'properties'}
+          >
+            {' '}
+            {task.completionPolicy && (
+              <details className="pd-policy">
+                <summary>
+                  {t('completionMode')}: {t(task.completionPolicy.mode)}
+                </summary>
+                <p className="pd-muted">{t('completionHelp')}</p>
+                <h3>{t('completionInstructions')}</h3>
+                <pre>{task.completionPolicy.instructions || '—'}</pre>
+                <h3>{t('machineChecks')}</h3>
+                {task.completionPolicy.checks.map((c, i) => (
+                  <div key={i}>
+                    <p>
+                      {c.criterion + 1}. {c.path} · {c.kind}
+                    </p>
+                    <pre>{c.expected}</pre>
                   </div>
                 ))}
-            </aside>
-          )}
-        </div>
-      ) : (
-        <table className="pd-list">
-          <thead>
-            <tr>
-              <th>{t('sessions')}</th>
-              <th>{t('sessionState')}</th>
-              <th>{t('updated')}</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {sessions
-              .filter((s) =>
-                s.displayTitle.toLowerCase().includes(query.toLowerCase()),
-              )
-              .map((s) => {
-                const state = agentState.get(s.id)
-                return (
-                  <tr key={s.id}>
-                    <td>
-                      {s.displayTitle}
-                      <div className="pd-muted">{s.cwd}</div>
-                    </td>
-                    <td>
-                      <span className="pd-badge">
-                        {t(
-                          state?.pendingInteraction
-                            ? 'waiting'
-                            : (state?.running ?? s.running)
-                              ? 'running'
-                              : 'idle',
-                        )}
-                      </span>
-                    </td>
-                    <td>{new Date(s.updatedAt).toLocaleString()}</td>
-                    <td>
-                      <button onClick={() => props.openSession(s.id)}>
-                        {t('openSession')}
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-          </tbody>
-        </table>
+                {task.completion?.checks?.map((r, i) => (
+                  <p key={i}>
+                    {r.criterion + 1}. {r.passed ? '✓' : '✗'} {r.evidence}
+                  </p>
+                ))}
+              </details>
+            )}
+            {['todo', 'triage', 'needs-info'].includes(task.status) &&
+              !task.archived && (
+                <TaskEditor
+                  key={`editor:${task.id}`}
+                  task={task}
+                  t={t}
+                  busy={busy || linkedRunning || !commandsAvailable}
+                  dirty={(value) =>
+                    setDirtyParts((old) =>
+                      old.editor === value ? old : { ...old, editor: value },
+                    )
+                  }
+                  save={(change, version) =>
+                    mutation(
+                      { ...task, version },
+                      { action: 'edit', ...change },
+                    )
+                  }
+                />
+              )}
+            <div className="pd-properties-grid">
+              {' '}
+              <label className="pd-field">
+                {t('assignee')}
+                <select
+                  aria-label={t('assignee')}
+                  value={task.assignee ?? ''}
+                  disabled={
+                    busy ||
+                    linkedRunning ||
+                    !commandsAvailable ||
+                    task.archived ||
+                    task.status === 'in-progress' ||
+                    task.status === 'done'
+                  }
+                  onChange={(e) =>
+                    mutation(task, {
+                      action: 'assign',
+                      assignee: e.target.value || null,
+                    })
+                  }
+                >
+                  <option value="">{t('queue')}</option>
+                  {sessionState.ids
+                    .filter((id) => !phaseSessions.has(id))
+                    .map((id) => sessionState.byId[id])
+                    .filter((s) =>
+                      workspaces
+                        .find((w) => w.workspaceId === task.workspaceId)
+                        ?.sessionIds.includes(s.id),
+                    )
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.displayTitle}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <p className="pd-muted">{t('assignmentHelp')}</p>
+              <label className="pd-field">
+                {t('move')}
+                <select
+                  value={task.status}
+                  disabled={
+                    busy ||
+                    linkedRunning ||
+                    !commandsAvailable ||
+                    task.archived ||
+                    task.status === 'done'
+                  }
+                  onChange={(e) =>
+                    mutation(task, {
+                      action: 'move',
+                      status: e.target.value as TaskStatus,
+                    })
+                  }
+                >
+                  {statuses.map((s) => (
+                    <option
+                      key={s}
+                      value={s}
+                      disabled={s === 'done' || s === 'in-progress'}
+                    >
+                      {t(s)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </section>
+          <section
+            role="tabpanel"
+            id="pd-panel-activity"
+            aria-labelledby="pd-tab-activity"
+            hidden={detailTab !== 'activity'}
+          >
+            {' '}
+            <h3 className="pd-muted">{t('audit')}</h3>
+            {snapshot?.ledger
+              .filter((a) => a.taskId === task.id)
+              .slice(-30)
+              .reverse()
+              .map((a) => (
+                <div className="pd-audit" key={a.seq}>
+                  {a.action} ·{' '}
+                  {a.actor === 'human' ? t('brand') : a.actor.slice(0, 16)}
+                  <br />
+                  {new Date(a.time).toLocaleString()}
+                </div>
+              ))}
+          </section>
+        </Dialog>
       )}
-      {snapshot && !tasks.length && (
-        <p className="pd-empty">{t(query ? 'filteredEmpty' : 'empty')}</p>
+      {creating && (
+        <Dialog
+          className="pd-create-dialog"
+          title={t('newTask')}
+          description={t('createHelp')}
+          closeLabel={t('cancel')}
+          onClose={closeCreate}
+        >
+          {detailError}
+          <CreateForm
+            key={workspaceId}
+            t={t}
+            workspaces={workspaces}
+            sessions={sessionState.ids
+              .filter((id) => !phaseSessions.has(id))
+              .map((id) => sessionState.byId[id])}
+            selectedWorkspace={workspaceId}
+            busy={busy}
+            close={closeCreate}
+            dirty={setCreateDirty}
+            submit={(r) =>
+              act(async () => {
+                const created = await props.create(r)
+                setCreating(false)
+                setCreateDirty(false)
+                setSelected(created.id)
+              })
+            }
+          />
+        </Dialog>
       )}
-      {!workspaces.length && <p className="pd-empty">{t('noWorkspace')}</p>}
-      <footer className="pd-footer">
-        {t('host')} · {t('brand')}
-      </footer>
+      {discard && (
+        <Dialog
+          alert
+          className="pd-confirm-dialog"
+          title={t('discardTitle')}
+          description={t('discardHelp')}
+          closeLabel={t('keepEditing')}
+          onClose={() => {
+            pendingNavigation.current = null
+            setDiscard(false)
+          }}
+          footer={
+            <>
+              <button
+                data-dialog-autofocus
+                onClick={() => {
+                  pendingNavigation.current = null
+                  setDiscard(false)
+                }}
+              >
+                {t('keepEditing')}
+              </button>
+              <button
+                className="pd-danger"
+                onClick={() => {
+                  setDiscard(false)
+                  if (discardTarget === 'create') {
+                    setCreating(false)
+                    setCreateDirty(false)
+                  } else {
+                    setSelected(null)
+                    setDirtyParts({ editor: false, evidence: false })
+                    const next = pendingNavigation.current
+                    pendingNavigation.current = null
+                    next?.()
+                  }
+                }}
+              >
+                {t('discard')}
+              </button>
+            </>
+          }
+        >
+          <p>{t('discardHelp')}</p>
+        </Dialog>
+      )}
     </main>
   )
 }
@@ -777,39 +1155,67 @@ function Evidence({
   t,
   busy,
   save,
+  dirty: reportDirty,
 }: {
   task: Task
   t: Injected['t']
   busy: boolean
-  save: (value: string) => void
+  save: (value: string, version: number) => Promise<boolean>
+  dirty: (value: boolean) => void
 }) {
-  const [value, setValue] = useState(task.evidence)
+  const [value, setValue] = useState(task.evidence),
+    [baseline, setBaseline] = useState(task.evidence),
+    [version, setVersion] = useState(task.version)
+  const dirty = value !== baseline,
+    stale = dirty && version !== task.version
+  useLayoutEffect(() => {
+    reportDirty(dirty)
+  }, [dirty, reportDirty])
+  useEffect(() => {
+    if (!dirty && task.version !== version) {
+      setValue(task.evidence)
+      setBaseline(task.evidence)
+      setVersion(task.version)
+    }
+  }, [task.evidence, task.version, version, dirty])
+  const reload = () => {
+    setValue(task.evidence)
+    setBaseline(task.evidence)
+    setVersion(task.version)
+  }
   return (
-    <label className="pd-field">
-      {t('evidence')}
-      <textarea
-        disabled={
-          task.status === 'done' ||
-          task.status === 'in-progress' ||
-          task.archived
-        }
-        aria-label={t('evidence')}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-      />
-      <button
-        disabled={
-          busy ||
-          value === task.evidence ||
-          task.status === 'done' ||
-          task.status === 'in-progress' ||
-          task.archived
-        }
-        onClick={() => save(value)}
-      >
-        {t('save')}
-      </button>
-    </label>
+    <div className="pd-evidence-editor">
+      {stale && (
+        <div className="pd-banner" role="status">
+          {t('changed')} <button onClick={reload}>{t('reloadLatest')}</button>
+        </div>
+      )}
+      <label className="pd-field">
+        {t('evidence')}
+        <textarea
+          aria-label={t('evidence')}
+          rows={5}
+          disabled={
+            busy ||
+            task.status === 'done' ||
+            task.status === 'in-progress' ||
+            task.archived
+          }
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+      </label>
+      {!['done', 'in-progress'].includes(task.status) && (
+        <button
+          disabled={busy || !dirty || stale || task.archived}
+          onClick={async () => {
+            if (await save(value, version)) setBaseline(value)
+          }}
+        >
+          {t('save')}
+        </button>
+      )}
+    </div>
   )
 }
 function CreateForm({
@@ -819,6 +1225,7 @@ function CreateForm({
   selectedWorkspace,
   busy,
   close,
+  dirty,
   submit,
 }: {
   t: Injected['t']
@@ -831,6 +1238,7 @@ function CreateForm({
   selectedWorkspace: string
   busy: boolean
   close: () => void
+  dirty: (value: boolean) => void
   submit: (r: CreateRequest) => void
 }) {
   const [ws, setWs] = useState(
@@ -848,6 +1256,34 @@ function CreateForm({
       instructions: '',
       checks: [],
     })
+  useLayoutEffect(() => {
+    dirty(
+      !!(
+        title.trim() ||
+        description.trim() ||
+        criteria.trim() ||
+        completionPolicy.instructions.trim() ||
+        completionPolicy.checks.length ||
+        completionPolicy.mode !== 'reviewed' ||
+        priority !== 1 ||
+        assignee ||
+        !intake ||
+        needsManual ||
+        ws !== (selectedWorkspace || workspaces[0]?.workspaceId || '')
+      ),
+    )
+  }, [
+    title,
+    description,
+    criteria,
+    completionPolicy,
+    priority,
+    assignee,
+    intake,
+    needsManual,
+    dirty,
+    ws,
+  ])
   return (
     <form
       className="pd-create"
@@ -870,8 +1306,6 @@ function CreateForm({
         })
       }}
     >
-      <h2>{t('newTask')}</h2>
-      <p className="pd-muted">{t('createHelp')}</p>
       <label className="pd-field">
         {t('all')}
         <select
@@ -892,6 +1326,7 @@ function CreateForm({
         {t('title')}
         <input
           required
+          data-dialog-autofocus
           maxLength={300}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -981,58 +1416,92 @@ function CreateForm({
   )
 }
 
+type EditableTask = Pick<
+  Task,
+  'title' | 'description' | 'priority' | 'completionPolicy' | 'needsManual'
+>
+const editable = (task: Task): EditableTask => ({
+  title: task.title,
+  description: task.description,
+  priority: task.priority,
+  completionPolicy: task.completionPolicy,
+  needsManual: task.needsManual,
+})
 function TaskEditor({
   task,
   t,
   busy,
   save,
+  dirty: reportDirty,
 }: {
   task: Task
   t: Injected['t']
   busy: boolean
-  save: (change: {
-    title: string
-    description: string
-    priority: number
-    completionPolicy: CompletionPolicy
-    needsManual: boolean
-  }) => void
+  save: (change: EditableTask, version: number) => Promise<boolean>
+  dirty: (value: boolean) => void
 }) {
-  const [title, setTitle] = useState(task.title),
-    [description, setDescription] = useState(task.description),
-    [priority, setPriority] = useState(task.priority),
-    [completionPolicy, setCompletionPolicy] = useState(
-      task.completionPolicy ?? { mode: 'manual', instructions: '', checks: [] },
-    ),
-    [needsManual, setNeedsManual] = useState(task.needsManual ?? false)
+  const [draft, setDraft] = useState(() => editable(task)),
+    [baseline, setBaseline] = useState(() => editable(task)),
+    [version, setVersion] = useState(task.version)
+  const dirty = JSON.stringify(draft) !== JSON.stringify(baseline),
+    stale = dirty && version !== task.version
+  useLayoutEffect(() => {
+    reportDirty(dirty)
+  }, [dirty, reportDirty])
+  useEffect(() => {
+    if (!dirty && version !== task.version) {
+      const next = editable(task)
+      setDraft(next)
+      setBaseline(next)
+      setVersion(task.version)
+    }
+  }, [task, version, dirty])
+  const change = <K extends keyof EditableTask>(
+    key: K,
+    value: EditableTask[K],
+  ) => setDraft((old) => ({ ...old, [key]: value }))
+  const reload = () => {
+    const next = editable(task)
+    setDraft(next)
+    setBaseline(next)
+    setVersion(task.version)
+  }
   return (
     <details>
       <summary>{t('edit')}</summary>
+      {stale && (
+        <div className="pd-banner" role="status">
+          {t('changed')} <button onClick={reload}>{t('reloadLatest')}</button>
+        </div>
+      )}
       <label className="pd-field">
         {t('title')}
         <input
           maxLength={300}
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          disabled={busy}
+          value={draft.title}
+          onChange={(e) => change('title', e.target.value)}
         />
       </label>
       <label className="pd-field">
         {t('description')}
         <textarea
           maxLength={12000}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          disabled={busy}
+          value={draft.description}
+          onChange={(e) => change('description', e.target.value)}
         />
       </label>
       <label className="pd-field">
         {t('priority')}
         <select
-          value={priority}
-          onChange={(e) => setPriority(Number(e.target.value))}
+          disabled={busy}
+          value={draft.priority}
+          onChange={(e) => change('priority', Number(e.target.value))}
         >
-          {(['low', 'normal', 'high'] as const).map((p, i) => (
-            <option value={i} key={p}>
-              {t(p)}
+          {(['low', 'normal', 'high'] as const).map((v, i) => (
+            <option value={i} key={v}>
+              {t(v)}
             </option>
           ))}
         </select>
@@ -1040,31 +1509,24 @@ function TaskEditor({
       <label className="pd-check">
         <input
           type="checkbox"
-          checked={needsManual}
-          onChange={(e) => setNeedsManual(e.target.checked)}
+          disabled={busy}
+          checked={draft.needsManual}
+          onChange={(e) => change('needsManual', e.target.checked)}
         />
         {t('manualFlag')}
       </label>
       <CompletionEditor
-        value={completionPolicy}
-        change={setCompletionPolicy}
+        value={draft.completionPolicy}
+        change={(v) => change('completionPolicy', v)}
         t={t}
         disabled={busy}
       />
       <button
-        disabled={
-          busy ||
-          !title.trim() ||
-          (title === task.title &&
-            description === task.description &&
-            priority === task.priority &&
-            JSON.stringify(completionPolicy) ===
-              JSON.stringify(task.completionPolicy) &&
-            needsManual === task.needsManual)
-        }
-        onClick={() =>
-          save({ title, description, priority, completionPolicy, needsManual })
-        }
+        className="pd-primary"
+        disabled={busy || !draft.title.trim() || !dirty || stale}
+        onClick={async () => {
+          if (await save(draft, version)) setBaseline(draft)
+        }}
       >
         {t('save')}
       </button>

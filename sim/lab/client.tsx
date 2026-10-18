@@ -5,13 +5,15 @@ import { Dashboard } from '../../src/client/view.tsx'
 import { CSS } from '../../src/client/style.ts'
 import { en, zh } from '../../src/client/locales.ts'
 const style = document.createElement('style')
-style.textContent = `html,body,#root{height:100%;margin:0;font:14px system-ui} :root{--dsw-alias-label-primary:#152536;--dsw-alias-label-secondary:#536578;--dsw-alias-bg-base:#fff;--dsw-alias-border-l:#d7dfe7;--dsw-alias-button-elevated-fill:#fff;--dsw-alias-interactive-bg-hover:#eef4f7;--dsw-alias-link:#237d75;--dsw-alias-state-business-primary:#237d75;--dsw-specific-sidebar-fill:#f0f3f6;--dsw-alias-state-error-primary:#bd5353}#lab-controls{padding:12px 22px;background:#142939;color:white;display:flex;gap:12px;align-items:center;flex-wrap:wrap}#lab-controls select,#lab-controls button{padding:7px}.perse-dashboard{height:auto;min-height:90%}${CSS}`
+style.textContent = `html,body,#root{height:100%;margin:0;font:14px system-ui} :root{--dsw-alias-label-primary:#152536;--dsw-alias-label-secondary:#536578;--dsw-alias-bg-base:#fff;--dsw-alias-border-l:#d7dfe7;--dsw-alias-button-elevated-fill:#fff;--dsw-alias-interactive-bg-hover:#eef4f7;--dsw-alias-link:#237d75;--dsw-alias-state-business-primary:#237d75;--dsw-specific-sidebar-fill:#f0f3f6;--dsw-alias-state-error-primary:#bd5353}#lab-controls{flex-shrink:0;padding:12px 22px;background:#142939;color:white;display:flex;gap:12px;align-items:center;flex-wrap:wrap}#lab-controls select,#lab-controls button{padding:7px}${CSS}
+#root{display:flex;flex-direction:column} .perse-dashboard{flex:1;height:0;min-height:0} :root{--dsw-alias-border-l2:#dce1e8;--dsw-alias-bg-layer-1:#fff} [data-lab-theme=dark]{--dsw-alias-bg-base:#0a0c0f;--dsw-alias-bg-layer-1:#12151a;--dsw-alias-label-primary:#e9ecf0;--dsw-alias-label-secondary:#8a919c;--dsw-alias-border-l2:#232830;--dsw-alias-interactive-bg-hover:#1f242b}`
 document.head.append(style)
 function App() {
   const [data, setData] = useState<any>(),
     [status, setStatus] = useState('loading'),
     [fixture, setFixture] = useState<any>(),
     [locale, setLocale] = useState('en'),
+    [theme, setTheme] = useState('light'),
     [selection, setSelection] = useState('dense'),
     [notice, setNotice] = useState(''),
     [epoch, setEpoch] = useState(0),
@@ -22,6 +24,9 @@ function App() {
       archived: false,
       selected: null,
     })
+  useEffect(() => {
+    document.documentElement.dataset.labTheme = theme
+  }, [theme])
   async function refresh() {
     setStatus('loading')
     try {
@@ -124,7 +129,12 @@ function App() {
     actions: Object.fromEntries(
       Object.keys(local).map((key) => [
         'set' + key[0].toUpperCase() + key.slice(1),
-        (value: any) => setLocal((s) => ({ ...s, [key]: value })),
+        (value: any) =>
+          setLocal((s) => ({
+            ...s,
+            [key]: value,
+            ...(['workspaceId', 'tab'].includes(key) ? { selected: null } : {}),
+          })),
       ]),
     ),
     create: command('create'),
@@ -185,6 +195,14 @@ function App() {
         >
           <option value="en">English</option>
           <option value="zh">中文</option>
+        </select>
+        <select
+          aria-label="Theme"
+          value={theme}
+          onChange={(e) => setTheme(e.target.value)}
+        >
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
         </select>
         <span role="status">{notice}</span>
       </div>

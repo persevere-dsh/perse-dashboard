@@ -32,6 +32,10 @@ assert.ok(
   packed.files.every((f) => !/^sim\/|^test\/|^\.build\//.test(f.path)),
   'Lab/test/runtime artifacts must never enter the production package',
 )
+assert.ok(
+  packed.files.every((f) => !/ 2\./.test(f.path)),
+  'Local duplicate source and document copies must not enter the package',
+)
 console.log(
   'Synthetic Lab and private runtime artifacts excluded from production tarball',
 )

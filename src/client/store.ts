@@ -4,19 +4,21 @@ export function createDashboardStore() {
     init: () => ({
       workspaceId: '',
       query: '',
-      tab: 'board' as 'board' | 'sessions',
+      tab: 'board' as 'board' | 'list' | 'sessions',
       archived: false,
       selected: null as string | null,
     }),
     actions: {
       setWorkspaceId: (d, value: string) => {
         d.workspaceId = value
+        d.selected = null
       },
       setQuery: (d, value: string) => {
         d.query = value
       },
-      setTab: (d, value: 'board' | 'sessions') => {
+      setTab: (d, value: 'board' | 'list' | 'sessions') => {
         d.tab = value
+        d.selected = null
       },
       setArchived: (d, value: boolean) => {
         d.archived = value

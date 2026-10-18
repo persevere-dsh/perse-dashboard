@@ -16,5 +16,6 @@
     "allowImportingTsExtensions": true,
     "ignoreDeprecations": "6.0"
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/* 2.ts", "src/**/* 2.tsx"]
 }
