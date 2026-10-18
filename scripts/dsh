@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+"""Use an explicit CLI command or the installed desktop's unmodified bundled CLI."""
+import json,os,pathlib,shutil,sys
+command=os.environ.get('PERSEVERE_DSH_COMMAND')
+if command:argv=json.loads(command)
+else:
+ root=pathlib.Path('/Applications/DeepSeek Harness.app/Contents')
+ if root.exists():argv=[str(root/'MacOS/DeepSeek Harness'),'--expose-internals',str(root/'Resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js')];os.environ['ELECTRON_RUN_AS_NODE']='1'
+ elif shutil.which('dsh'):argv=[shutil.which('dsh')]
+ else:raise SystemExit('Install DSH or set PERSEVERE_DSH_COMMAND to a JSON argument array.')
+if not isinstance(argv,list) or not argv or not all(isinstance(a,str) for a in argv):raise SystemExit('PERSEVERE_DSH_COMMAND must be a JSON argument array')
+os.execvpe(argv[0],argv+sys.argv[1:],os.environ)

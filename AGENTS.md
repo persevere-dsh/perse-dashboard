@@ -1,0 +1,5 @@
+# Persevere with DSH dashboard
+
+`perse` = persevere.
+
+Read docs/architecture.md and docs/contracts.md before edits. DSH owns Session, Workspace, Agent, approvals, model routes and execution. Consume declared Cordis dependencies; register UI through slots and generated Typert Remote. Never patch DOM, bypass CSP, inspect private React state, edit DSH logs, or redefine Agent running semantics. Host owns task truth; Client reads standard Session/Workspace hooks. Every changed behavior needs relevant contract tests and `npm run sim -- --lane native` evidence. Use `--lane live` for model execution claims. Each sim owns its home, port, process group and artifact directory. Never kill by process-name pattern or use the real DSH home as a fixture. A failed assertion must fail the run. Reports distinguish replay, real Host and real model. Update architecture/contracts alongside wire changes; do not silently refresh fixtures. Only a human can accept a review and mark done.

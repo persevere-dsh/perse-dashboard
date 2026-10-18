@@ -1,0 +1,54 @@
+# 工作看板 — Persevere with DSH
+
+`perse` = persevere。
+
+基于 DSH 官方 Cordis 插件、UI slots、Typert Remote、Storage Domain 和 Session Controller 实现的原生工作看板。
+
+支持工作区任务管理、优先级、指定执行会话、工作区队列、原子自动认领、原生会话跳转、证据回传和人工验收。默认不开启自动派发；选中工作区后点击“启动队列”，使用该 Host 的模型和权限逐项执行，单次最多 10 项。异常或缺失证据时暂停。Agent 结束只会进入待验收，不会自动完成任务。
+
+## 安装
+
+验证目标为 DSH **0.2.1-rc.2**、Cordis **4.0.5**、Node **24**。
+
+```sh
+npm ci
+npm run check
+npm pack
+dsh plugin --profile web add ./perse-dashboard-1.0.0.tgz
+# 本机 Desktop 未将 dsh 加入 PATH 时：
+scripts/dsh plugin --profile desktop add ./perse-dashboard-1.0.0.tgz
+```
+
+重启所选实例后，从原生侧栏打开“工作看板”。必须使用打包后的 tgz 安装，不使用目录链接。此仓库不会修改 DSH 应用文件。
+
+## 分配和自动认领
+
+创建任务时写清结果和验收标准，可指定工作区中的一个会话，也可放入工作区队列。点击“准备 DSH 草稿”只准备未发送的原生输入；发送后 agent 可通过 `dashboard_claim_next` 领取任务，通过 `dashboard_report` 提交版本和证据。认领由 Host 串行、原子地决定，避免两个会话重复领取。
+
+“启动队列”会通过官方 Session Controller 派发任务。暂停只阻止后续派发；停止当前 Agent 请使用原生会话控制。认领不自动过期，失败任务需查看真实会话后手动退回队列。验收需逐项勾选标准并明确确认；完成后证据被冻结，需重新打开任务才能修改。
+
+插件提供的 agent 工具只有认领和报告。Owner Remote 仍处于 DSH 的所有者信任边界内，插件无法证明点击按钮的是物理用户还是被授权的所有者自动化。
+
+## Agent 开发与自验证
+
+借鉴 Hermex 的 sim 资源管理方式，每次验证拥有独立 home、工作目录、端口、进程组和证据目录。不会将真实 DSH home 当作测试夹具。
+
+```sh
+npm ci
+npx playwright install chromium
+npm run sim -- --lane native
+npm run sim -- --lane live
+npm run sim -- --lane native --keep
+```
+
+`native` 运行真实 DSH Host、原生页面、Gateway、Agent loop、工具和存储，仅模型使用确定性适配器，不发送外部模型请求。`live` 临时复制凭据到隔离目录，以真实模型写入并读回测试文件，清理时删除凭据副本。设置 `PERSEVERE_DSH_CREDENTIALS` 可指定其他凭据文件。结果、截图和失败日志保存在 `.build/sim/<run-id>/`，以 `summary.json` 为入口。
+
+`--keep` 用于保留测试实例供目视检查，Ctrl-C 仅清理本次创建的进程。没有 macOS Desktop 时，可通过 `PERSEVERE_DSH_COMMAND` JSON 参数数组指定 DSH 命令。设置 `PERSEVERE_DSH_BROWSER=msedge` 可复用 Edge。
+
+目录、状态归属、契约和兼容依据见 [架构](docs/architecture.md)、[契约](docs/contracts.md)、[开发说明](docs/development.md)、[兼容性](docs/compatibility.md)。生产类型检查使用真实 DSH 声明，Remote 由官方 Typert generator 生成。CI 验证离线契约与打包面，真实原生与模型测试由 sim 验收。
+
+一个安装对应一个 DSH Host。远程使用时在对应 Host 安装，通过已有的受信 Web/SSH 通道访问。本版不跨 Host 聚合、不代管 SSH 凭据、不增加定时调度，也不会自动合并或部署 agent 的改动。
+
+指定会话的任务请打开该会话认领，或启动队列；准备新会话草稿的按钮会禁用，避免把任务交给无权认领的会话。
+
+MIT。Part of Persevere with DSH

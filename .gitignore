@@ -1,0 +1,8 @@
+node_modules/
+lib/
+.build/
+*.tgz
+*.tsbuildinfo
+.DS_Store
+__pycache__/
+*.pyc

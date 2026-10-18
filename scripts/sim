@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Assigned, isolated DSH simulation with resource ownership and retained evidence."""
+import re,argparse,contextlib,fcntl,hashlib,json,os,pathlib,signal,socket,subprocess,sys,time,urllib.request,uuid
+ROOT=pathlib.Path(__file__).resolve().parents[1]
+APP=pathlib.Path('/Applications/DeepSeek Harness.app/Contents')
+def terminate(process):
+    if process is None:return
+    with contextlib.suppress(ProcessLookupError):os.killpg(process.pid,signal.SIGTERM)
+    try:process.wait(timeout=8)
+    except subprocess.TimeoutExpired:pass
+    with contextlib.suppress(ProcessLookupError):os.killpg(process.pid,signal.SIGKILL)
+    process.wait()
+def command(argv,log,env,timeout=300,lock_fd=None):
+    with log.open('w') as output:
+        p=subprocess.Popen(argv,cwd=ROOT,env=env,stdout=output,stderr=subprocess.STDOUT,start_new_session=True,pass_fds=() if lock_fd is None else (lock_fd,))
+        try:
+            rc=p.wait(timeout=timeout)
+            if rc:raise RuntimeError(f'Command failed ({rc}): {log}')
+        except BaseException:terminate(p);raise
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--lane',choices=['native','live'],default='native');parser.add_argument('--keep',action='store_true');parser.add_argument('--timeout',type=int,default=180);args=parser.parse_args()
+    def interrupted(_signal,_frame):raise KeyboardInterrupt()
+    signal.signal(signal.SIGTERM,interrupted)
+    build=ROOT/'.build';build.mkdir(exist_ok=True);lock=(build/'sim.lock').open('a+')
+    try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    except BlockingIOError:print('Another sim owns this checkout',file=sys.stderr);return 2
+    run=build/'sim'/f'{time.strftime("%Y%m%d-%H%M%S")}-{uuid.uuid4().hex[:6]}';run.mkdir(parents=True)
+    home=run/'home';home.mkdir();workspace=run/'workspace';workspace.mkdir()
+    env={**os.environ,'DSH_HOME':str(home),'ELECTRON_RUN_AS_NODE':'1','DSH_TELEMETRY_ENABLED':'false'}
+    # Exact caller-supplied CLI is supported on other hosts. Never resolve a shell string.
+    cli=json.loads(os.environ.get('PERSEVERE_DSH_COMMAND',json.dumps([str(APP/'MacOS/DeepSeek Harness'),'--expose-internals',str(APP/'Resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js')])))
+    version=subprocess.run(cli+['--version'],env=env,capture_output=True,text=True,check=True).stdout.strip()
+    source=subprocess.run(['git','rev-parse','HEAD'],cwd=ROOT,capture_output=True,text=True)
+    summary={'sourceCommit':source.stdout.strip() if source.returncode==0 else 'uncommitted','runtimeVersion':version,'lane':args.lane,'runId':run.name,'home':str(home),'workspace':str(workspace),'status':'running','startedAt':time.time(),'assertions':[],'cleanup':False}
+    process=None;out=None
+    try:
+        command(['npm','run','check'],run/'check.log',env,300,lock.fileno())
+        packed=subprocess.run(['npm','pack','--json','--pack-destination',str(run)],cwd=ROOT,env=env,capture_output=True,text=True,check=True)
+        archive=run/json.loads(packed.stdout)[0]['filename'];summary['packageSha256']=hashlib.sha256(archive.read_bytes()).hexdigest()
+        # Official package installation into a new profile, never linked directories.
+        command(cli+['plugin','--profile','web','add',str(archive)],run/'install.log',env,300,lock.fileno())
+        if args.lane=='live':
+            import shutil
+            credentials=pathlib.Path(os.environ.get('PERSEVERE_DSH_CREDENTIALS',str(pathlib.Path.home()/'.dsh/.credentials.yaml')))
+            if not credentials.is_file():raise RuntimeError('Live credentials unavailable; no model call was made')
+            shutil.copyfile(credentials,home/'.credentials.yaml');os.chmod(home/'.credentials.yaml',0o600)
+        with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
+        patch=run/'sim.patch.yml';text='- id: session-log-deepseek\n  disabled: true\n- id: session-telemetry-otel\n  disabled: true\n- id: desktop-product-telemetry\n  disabled: true\n'
+        if args.lane=='native':text+=f"- id: agent-default-model\n  config:\n    provider: dashboard-sim\n    model: sim\n- insert:\n    - id: dashboard-sim\n      name: {json.dumps(str(ROOT/'sim/model.mjs'))}\n"
+        text+=f'- id: workspace-controller\n  config:\n    documentsDirectory: {json.dumps(str(workspace))}\n'
+        patch.write_text(text)
+        out=(run/'host.log').open('w');process=subprocess.Popen(cli+['web','--patch',str(patch),'--host','127.0.0.1','--port',str(port),'--no-open'],cwd=workspace,env=env,stdout=out,stderr=subprocess.STDOUT,start_new_session=True,pass_fds=(lock.fileno(),))
+        summary.update(pid=process.pid,url=f'http://127.0.0.1:{port}')
+        (run/'runtime.json').write_text(json.dumps(summary,indent=2));print(f'SIM {run.name} {summary["url"]}',flush=True)
+        deadline=time.monotonic()+90
+        while time.monotonic()<deadline:
+            if process.poll() is not None:raise RuntimeError(f'DSH exited before readiness; {run/"host.log"}')
+            try:
+                with urllib.request.urlopen(summary['url'],timeout=1) as response:
+                    if response.status==200:break
+            except urllib.error.HTTPError as error:
+                if error.code in (401,403):break
+                time.sleep(.25)
+            except Exception:time.sleep(.25)
+        else:raise TimeoutError('DSH startup timed out')
+        log=(run/'host.log').read_text()
+        token=re.search(r'http://127\.0\.0\.1:'+str(port)+r'/\?token=([^\s]+)',log)
+        if not token:raise RuntimeError('Missing isolated DSH authentication receipt')
+        summary['authUrl']=summary['url']+'/?token='+token.group(1)
+        (run/'runtime.json').write_text(json.dumps(summary,indent=2));os.chmod(run/'runtime.json',0o600)
+        browser_env={**env,'PERSEVERE_DSH_SIM':str(run)}
+        command(['node','sim/browser.mjs'],run/'browser.log',browser_env,args.timeout,lock.fileno())
+        summary['assertions']=json.loads((run/'browser-results.json').read_text());summary['status']='passed'
+        if args.keep:
+            print('Preview active. Ctrl-C cleans up this sim only.',flush=True)
+            while process.poll() is None:time.sleep(.5)
+    except KeyboardInterrupt:
+        if summary['status']!='passed':summary['status']='interrupted'
+    except BaseException as error:
+        summary.update(status='failed',error=str(error))
+        if (run/'browser-results.json').exists():summary['assertions']=json.loads((run/'browser-results.json').read_text())
+        print(str(error),file=sys.stderr)
+    finally:
+        terminate(process)
+        if out:out.close()
+        # Credentials are transient even when failed-run evidence is retained.
+        (home/'.credentials.yaml').unlink(missing_ok=True)
+        summary.pop('authUrl',None)
+        summary.update(cleanup=process is None or process.poll() is not None,finishedAt=time.time());(run/'summary.json').write_text(json.dumps(summary,indent=2));print(str(run/'summary.json'),flush=True)
+    return 0 if summary['status']=='passed' else 1
+if __name__=='__main__':sys.exit(main())

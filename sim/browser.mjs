@@ -1,0 +1,55 @@
+/** Browser-to-real-DSH journeys; setup uses the documented Gateway, product actions use visible UI. */
+import {chromium,expect} from '@playwright/test';import fs from 'node:fs/promises';import path from 'node:path';
+const run=process.env.PERSEVERE_DSH_SIM;if(!run)throw Error('Use scripts/sim');const runtime=JSON.parse(await fs.readFile(path.join(run,'runtime.json'),'utf8'));
+const browser=await chromium.launch({headless:true,...process.env.PERSEVERE_DSH_BROWSER?{channel:process.env.PERSEVERE_DSH_BROWSER}:{}}),context=await browser.newContext({viewport:{width:1510,height:1050}}),page=await context.newPage(),results=[],errors=[];
+const logs=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>logs.push({type:m.type(),text:m.text()}));
+const diagnostics=new AbortController();let graphLog;
+const check=(name)=>{results.push({check:name,passed:true});console.log('PASS '+name)};
+async function rpc(endpoint,payload={},target=page){return target.evaluate(async({endpoint,payload})=>{const response=await fetch(`api/${endpoint}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'client-request',rpcId:crypto.randomUUID(),method:endpoint,payload:{args:payload}})});if(!response.ok)throw Error(`HTTP ${response.status}`);const body=await response.json();if(!body.result.ok)throw Error(JSON.stringify(body.result.error));return body.result.value},{endpoint,payload})}
+const snapshot=()=>rpc('perseDashboard/snapshot');
+async function board(target=page){await target.getByText('工作看板',{exact:true}).first().click();await expect(target.getByRole('heading',{name:'工作看板',exact:true})).toBeVisible()}
+async function until(fn,expected,timeout=60000){await expect.poll(fn,{timeout,intervals:[100,300,700]}).toEqual(expected)}
+try{
+ await page.goto(runtime.authUrl);
+ const cookies=(await context.cookies()).map(c=>`${c.name}=${c.value}`).join('; ');
+ graphLog=(async()=>{const response=await fetch(runtime.url+'/plugins/events',{headers:{cookie:cookies},signal:diagnostics.signal});const reader=response.body.getReader(),decoder=new TextDecoder();let pending='';for(;;){const {done,value}=await reader.read();if(done)break;pending+=decoder.decode(value,{stream:true});let i;while((i=pending.indexOf('\n'))>=0){const line=pending.slice(0,i);pending=pending.slice(i+1);if(line.startsWith('data:'))await fs.appendFile(path.join(run,'client-graph.jsonl'),line.slice(5).trim()+'\n')}}})().catch(e=>{if(!diagnostics.signal.aborted)logs.push({type:'graph-diagnostic',text:String(e)})});
+ if(runtime.lane==='native'&&process.env.PERSEVERE_DSH_HMR_PROBE){const file=path.join(runtime.home,'profiles/web/node_modules/perse-dashboard/lib/client.js');await fs.utimes(file,new Date(),new Date());await new Promise(resolve=>setTimeout(resolve,1500))}
+ const cont=page.getByRole('button',{name:'继续',exact:true});await page.getByText('工作看板',{exact:true}).first().waitFor({timeout:15000});try{await cont.waitFor({timeout:5000});await cont.click()}catch(e){if(!String(e).includes('Timeout'))throw e}await board();await expect(page.getByText('正在连接 DSH…')).toHaveCount(0);check('native slot loads without DOM injection');
+ const created=await rpc('workspace/create',{request:{path:runtime.workspace,title:'Dashboard simulation'}}),ws=created.workspace.workspaceId;
+ await page.getByRole('combobox',{name:'全部工作区',exact:true}).selectOption(ws);
+ await page.getByRole('button',{name:'新建任务',exact:true}).click();const form=page.locator('form.pd-create');
+ const title=runtime.lane==='live'?'Live DSH isolated verification':'Native DSH contract verification';
+ await form.getByLabel('标题',{exact:true}).fill(title);
+ await form.getByLabel('任务说明',{exact:true}).fill(runtime.lane==='live'?'In this disposable workspace, write sim-result.txt containing exactly DSH_DASHBOARD_LIVE_OK. Read it back and report evidence through dashboard_report. Do not access any other directory.':'Exercise the native task tool contract and submit deterministic evidence. No external model inference is used in this lane.');
+ const criterion=runtime.lane==='live'?'sim-result.txt contains DSH_DASHBOARD_LIVE_OK':'Native DSH tools return a verified evidence report';
+ await form.getByLabel('验收标准（每行一条）',{exact:true}).fill(criterion);await form.getByRole('button',{name:'创建任务',exact:true}).click();
+ await expect(page.locator('.pd-card').filter({hasText:title})).toBeVisible();let task=(await snapshot()).tasks.find(t=>t.title===title);expect(task.status).toBe('todo');check('task creation is durable and never executes a model');
+ await page.getByRole('button',{name:'准备 DSH 草稿',exact:true}).click();await expect(page.locator('[contenteditable="true"]').first()).toContainText('dashboard_claim_next');expect((await snapshot()).tasks.find(t=>t.id===task.id).status).toBe('todo');check('handoff opens an unsent native DSH draft');await board();await page.getByRole('combobox',{name:'全部工作区',exact:true}).selectOption(ws);
+ // The native queue uses SessionController and official Agent tools, not a fake HTTP task executor.
+ await page.getByRole('button',{name:'启动队列',exact:true}).click();
+ await until(async()=>{const s=await snapshot();const t=s.tasks.find(t=>t.id===task.id);if(t?.status==='blocked'||s.dispatch.error)throw Error(JSON.stringify({task:t,dispatch:s.dispatch}));return t?.status},'in-review',runtime.lane==='live'?120000:30000);
+ await until(async()=>(await snapshot()).dispatch.enabled,false);
+ if(runtime.lane==='native')await new Promise(resolve=>setTimeout(resolve,12000));
+ task=(await snapshot()).tasks.find(t=>t.id===task.id);expect(task.sessionId).toBeTruthy();expect(task.evidence.length).toBeGreaterThan(5);expect(task.checked).toEqual([false]);check('native queue atomically claims and reports evidence without auto-accepting');
+ if(runtime.lane==='live'){expect((await fs.readFile(path.join(runtime.workspace,'sim-result.txt'),'utf8')).trim()).toBe('DSH_DASHBOARD_LIVE_OK');check('real model wrote and read the exact isolated artifact')}
+ await page.locator('.pd-card').filter({hasText:title}).click();await expect(page.getByRole('button',{name:'确认验收并完成'})).toBeDisabled();await page.getByLabel(criterion,{exact:true}).click();await expect(page.getByLabel(criterion,{exact:true})).toBeChecked();await expect(page.getByRole('button',{name:'确认验收并完成'})).toBeEnabled();await page.getByRole('button',{name:'确认验收并完成'}).click();await until(async()=>(await snapshot()).tasks.find(t=>t.id===task.id).status,'done');check('only explicit human acceptance completes the task');
+ if(runtime.lane==='native'){
+   const pull=await rpc('perseDashboard/create',{request:{requestId:crypto.randomUUID(),workspaceId:ws,title:'Agent pull contract',description:'Claim through actual DSH tool',criteria:['Actual agent claim and report'],priority:2,assignee:null}});
+   const session=await rpc('session/create',{request:{workspaceId:ws,sessionId:`session-${crypto.randomUUID()}`}});
+   await rpc('session/prompt',{request:{sessionId:session.sessionId,requestId:crypto.randomUUID(),mode:'queue',content:[{type:'text',text:`Use dashboard_claim_next with taskId "${pull.id}". Then report concrete evidence with dashboard_report.`}]}});
+   await until(async()=>(await snapshot()).tasks.find(t=>t.id===pull.id).status,'in-review',30000);
+   const after=await snapshot();expect(after.tasks.find(t=>t.id===pull.id).sessionId).toBe(session.sessionId);expect(after.ledger.filter(a=>a.taskId===pull.id).map(a=>a.action)).toEqual(['create','claim','report']);
+   check('agent autonomously claims through the real DSH tool then reports');
+ }
+ await page.locator('.pd-detail').screenshot({path:path.join(run,'task-evidence.png')});await page.getByRole('button',{name:'关闭详情',exact:true}).click();await page.screenshot({path:path.join(run,'dashboard.png'),fullPage:true});await page.locator('.pd-card').filter({hasText:title}).click();
+ const second=await context.newPage();await second.goto(runtime.url);await board(second);await expect(second.locator('.pd-card').filter({hasText:title})).toBeVisible();check('second client receives the authoritative task baseline');
+ await page.getByRole('button',{name:'归档',exact:true}).click();await until(async()=>(await snapshot()).tasks.find(t=>t.id===task.id).archived,true);await expect(second.locator('.pd-card').filter({hasText:title})).toHaveCount(0);check('task changes stream to another client');
+ await page.getByLabel('显示归档',{exact:true}).check();await page.locator('.pd-card').filter({hasText:title}).click();await page.getByRole('button',{name:'恢复',exact:true}).click();await expect(second.locator('.pd-card').filter({hasText:title})).toBeVisible();check('archive has a visible restore path');
+ const before=await snapshot();const stale={requestId:crypto.randomUUID(),id:task.id,expectedVersion:1,action:'edit',title:'stale'};await expect(rpc('perseDashboard/update',{request:stale})).rejects.toThrow(/conflict/);expect((await snapshot()).revision).toBe(before.revision);check('stale writes fail without changing durable state');
+ await page.reload();await board();await expect(page.locator('.pd-card').filter({hasText:title})).toBeVisible();check('reload rebuilds state from the Host');
+ await page.locator('.pd-card').filter({hasText:title}).click();await page.getByRole('button',{name:'打开 DSH 会话',exact:true}).click();await expect(page.locator('body')).toContainText(/SIM_NATIVE_OK|DSH_DASHBOARD_LIVE_OK/);check('linked task opens the real native conversation');
+ await board();await page.setViewportSize({width:430,height:900});await page.screenshot({path:path.join(run,'mobile.png'),fullPage:true});await page.setViewportSize({width:1510,height:1050});
+ await page.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});await page.screenshot({path:path.join(run,'dark.png'),fullPage:true});
+ expect(errors).toEqual([]);check('no browser runtime errors');
+ await fs.writeFile(path.join(run,'browser-results.json'),JSON.stringify(results,null,2));console.log(JSON.stringify(results));
+}catch(error){results.push({check:'journey',passed:false,error:String(error)});await fs.writeFile(path.join(run,'browser-results.json'),JSON.stringify(results,null,2));await page.screenshot({path:path.join(run,'failure.png'),fullPage:true});await fs.writeFile(path.join(run,'failure.txt'),await page.locator('body').innerText());await fs.writeFile(path.join(run,'console.json'),JSON.stringify({errors,logs},null,2));try{await page.getByRole('button',{name:'插件',exact:true}).click({timeout:2000});await fs.writeFile(path.join(run,'plugin-diagnostics.txt'),await page.locator('body').innerText())}catch{}throw error}finally{diagnostics.abort();await graphLog;await browser.close()}

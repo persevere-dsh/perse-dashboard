@@ -1,0 +1,19 @@
+name: verify
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run codegen
+      - run: npm run check
+      - run: python3 -m unittest discover -s test -p '*_test.py' -v
+      - run: npm pack --dry-run
