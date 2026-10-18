@@ -6,6 +6,7 @@ import {
 } from '../../lib/types/host/board.js'
 import { Dispatcher } from '../../lib/types/host/dispatch.js'
 import { CompletionCoordinator } from '../../lib/types/host/completion.js'
+import { permissionControls } from '../../lib/types/client/permission-api.js'
 import { mkdir, writeFile, readFile, rename } from 'node:fs/promises'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
@@ -20,6 +21,10 @@ export async function makeBackend(
     jobs = new Map(),
     running = new Set(),
     gates = new Map()
+  let permissionDefault = 'workspace-write',
+    permissionRevision = 0,
+    permissionWritable = true,
+    permissionAvailable = true
   for (const id of ['alpha', 'beta']) {
     const folder = path.join(directory, id)
     await mkdir(folder, { recursive: true })
@@ -39,7 +44,10 @@ export async function makeBackend(
       cwd: workspaces.find((w) => w.id === ws).path,
       updatedAt: Date.now(),
       running: false,
-      projectionValues: { tokenUsage: { inputTokens: 0, outputTokens: 0 } },
+      projectionValues: {
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        permissions: { currentValue: permissionDefault },
+      },
     })
     return id
   }
@@ -51,7 +59,9 @@ export async function makeBackend(
     active.running = true
     running.add(active.id)
     sessions.get('session-alpha-reviewer').pendingInteraction = {
-      kind: 'permission',
+      kind: 'approval',
+      key: 'fixture-approval',
+      sessionId: 'session-alpha-reviewer',
     }
     for (const session of sessions.values())
       session.projectionValues.tokenUsage = {
@@ -76,6 +86,8 @@ export async function makeBackend(
         })
       }
       for (const [id, prompts] of saved.history) history.set(id, prompts)
+      permissionDefault = saved.permissionDefault ?? 'workspace-write'
+      permissionRevision = saved.permissionRevision ?? 0
     } catch (error) {
       if (error.code !== 'ENOENT') throw error
     }
@@ -91,6 +103,8 @@ export async function makeBackend(
         JSON.stringify({
           sessions: [...sessions.values()],
           history: [...history],
+          permissionDefault,
+          permissionRevision,
         }),
       )
       await rename(temporary, file)
@@ -132,6 +146,50 @@ export async function makeBackend(
     },
   )
   const task = (id) => board.snapshot().tasks.find((t) => t.id === id)
+  const permissions = permissionControls({
+    async catalog() {
+      if (!permissionAvailable) throw Error('Permission provider unavailable')
+      return {
+        ok: true,
+        value: {
+          defaultPreset: permissionDefault,
+          defaultOptions: [
+            { value: 'workspace-write', name: 'Workspace write' },
+            { value: 'danger-full-access', name: 'Full access' },
+          ],
+        },
+      }
+    },
+    async describe() {
+      return {
+        ok: true,
+        value: {
+          writable: permissionWritable,
+          namespaces: [{ ns: 'permission', revision: permissionRevision }],
+        },
+      }
+    },
+    async mutate(ns, ops, revision) {
+      if (
+        ns !== 'permission' ||
+        revision !== permissionRevision ||
+        !permissionWritable
+      )
+        throw Error('Permission settings conflict or read-only')
+      if (
+        ops.length !== 1 ||
+        ops[0].op !== 'set' ||
+        ops[0].path.join('.') !== 'defaultPreset' ||
+        !['workspace-write', 'danger-full-access'].includes(ops[0].value)
+      )
+        throw Error('Invalid permission edit')
+      permissionDefault = ops[0].value
+      permissionRevision++
+      await saveRuntime()
+      events.emit('change')
+      return { ok: true, value: {} }
+    },
+  })
   const runtime = {
     create: async (ws) => {
       const id = addSession(ws)
@@ -361,6 +419,25 @@ export async function makeBackend(
     addSession,
     task,
     scripts,
+    permissions,
+    async setInteraction(id, kind) {
+      const session = sessions.get(id)
+      if (!session) throw Error('Session missing')
+      session.pendingInteraction = kind
+        ? { key: crypto.randomUUID(), kind, sessionId: id }
+        : null
+      await saveRuntime()
+      events.emit('change')
+    },
+    async permissionControl({ available, writable, preset }) {
+      if (available !== undefined) permissionAvailable = available
+      if (writable !== undefined) permissionWritable = writable
+      if (preset) {
+        permissionDefault = preset
+        permissionRevision++
+      }
+      await saveRuntime()
+    },
     release: (id) => {
       gates.get(id)?.()
       gates.delete(id)

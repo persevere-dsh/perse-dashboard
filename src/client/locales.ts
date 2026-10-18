@@ -1,4 +1,37 @@
 export const en = {
+  closePermissionSettings: 'Close permission settings',
+  attention: 'Needs attention',
+  attentionHelp:
+    'This Session is waiting for your approval, plan review or answer. Open its native DSH conversation to inspect and respond. Waiting does not grant authorization or imply completion.',
+  waitingApproval: 'Waiting for approval',
+  waitingPlan: 'Waiting for plan review',
+  waitingAnswer: 'Waiting for answer',
+  waitingInteraction: 'Waiting for interaction',
+  openPendingSession: 'Open request in DSH',
+  defaultPermissions: 'DSH default permissions',
+  permissionScope:
+    'Applies to all future DSH Sessions, including dashboard analysis, execution and review.',
+  permissionExisting:
+    'Existing and assigned Sessions retain their own permissions. Changing this default does not decide any pending request.',
+  permissionSettings: 'Permission settings',
+  permissionWorkspace: 'Workspace write',
+  permissionFull: 'Full access',
+  permissionReadOnly: 'Read only',
+  permissionUnavailable: 'Permission settings unavailable',
+  refreshPermissions: 'Refresh permissions',
+  permissionReadOnlySettings: 'This DSH settings provider is read-only.',
+  permissionDefaultChoice: 'Default for new Sessions',
+  savePermissionDefault: 'Save default',
+  confirmPermissionDefault: 'Change the DSH permission default?',
+  confirmPermissionSave: 'Confirm and save default',
+  permissionAcknowledge:
+    'I understand this affects future Sessions and does not approve pending requests.',
+  permissionFullWarning:
+    'Full access removes sandbox restrictions and individual approval prompts. Save it only after explicitly choosing and confirming this scope.',
+  permissionApprovalHelp:
+    'Approve or reject individual requests in the native conversation. The dashboard never grants permission automatically.',
+  permissionSaved: 'The DSH default was saved and read back.',
+
   overview: 'Overview',
   view: 'View',
   taskList: 'Task list',
@@ -148,6 +181,37 @@ export const en = {
 } as const
 export type Key = keyof typeof en
 export const zh: Record<Key, string> = {
+  closePermissionSettings: '关闭权限设置',
+  attention: '需要你处理',
+  attentionHelp:
+    '此会话正在等待权限审批、计划确认或回答。请打开原生 DSH 会话查看并处理；等待交互不代表已授权或已完成。',
+  waitingApproval: '等待审批',
+  waitingPlan: '等待计划确认',
+  waitingAnswer: '等待回答',
+  waitingInteraction: '等待交互',
+  openPendingSession: '在 DSH 中查看请求',
+  defaultPermissions: 'DSH 默认执行权限',
+  permissionScope: '作用于后续所有 DSH 新会话，包括看板的分析、执行和复核。',
+  permissionExisting:
+    '已有会话和指定会话保留各自权限。修改默认值不会批准或拒绝当前挂起的请求。',
+  permissionSettings: '权限设置',
+  permissionWorkspace: '工作区内修改',
+  permissionFull: '完全访问',
+  permissionReadOnly: '只读',
+  permissionUnavailable: '权限设置不可用',
+  refreshPermissions: '刷新权限',
+  permissionReadOnlySettings: '当前 DSH 设置提供方不允许修改。',
+  permissionDefaultChoice: '新会话默认权限',
+  savePermissionDefault: '保存默认权限',
+  confirmPermissionDefault: '修改 DSH 默认执行权限？',
+  confirmPermissionSave: '确认并保存默认权限',
+  permissionAcknowledge: '我了解此设置影响后续新会话，不会批准当前挂起的请求。',
+  permissionFullWarning:
+    '完全访问会关闭沙箱限制和逐次审批提示，只有在明确选择并确认这一作用范围后才会保存。',
+  permissionApprovalHelp:
+    '单次请求的允许或拒绝请在原生会话中决定，看板不会自动授权。',
+  permissionSaved: 'DSH 默认权限已保存并回读确认。',
+
   overview: '概览',
   view: '视图',
   taskList: '任务列表',

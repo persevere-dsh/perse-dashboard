@@ -1,6 +1,8 @@
 /** Pure components: only framework-provided hooks and injected commands. */
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { Dialog, DetailTabs } from './dialog.tsx'
+import { PermissionSettings, type PermissionControls } from './permissions.tsx'
+import { activeTaskSessions, attentionKey } from './attention.ts'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {
   PropsRuntime,
@@ -24,7 +26,7 @@ import type {
   TaskCommand,
   DashboardSnapshot,
 } from '../contract/types.ts'
-export interface Injected {
+export interface Injected extends PermissionControls {
   create(r: CreateRequest): Promise<Task>
   update(r: UpdateRequest): Promise<Task>
   dispatch(r: DispatchRequest): Promise<DispatchState>
@@ -114,6 +116,15 @@ export function Dashboard(props: Props) {
         .toLowerCase()
         .includes(query.toLowerCase()),
   )
+  const attention = sessions.flatMap((session) => {
+    const key = attentionKey(agentState.get(session.id))
+    return key ? [{ session, key }] : []
+  })
+  const taskAttention = (item: Task) =>
+    activeTaskSessions(item).flatMap((id) => {
+      const key = attentionKey(agentState.get(id as never))
+      return key ? [{ id, key }] : []
+    })
   const task = snapshot?.tasks.find(
       (v) =>
         v.id === selected && (!workspaceId || v.workspaceId === workspaceId),
@@ -164,6 +175,10 @@ export function Dashboard(props: Props) {
     !!workspace && dispatch?.workspaceId === workspace.workspaceId
   const queueActive = !!dispatch?.enabled && ownsQueue
   const otherQueueActive = !!dispatch?.enabled && !ownsQueue
+  const queueAttention =
+    ownsQueue && dispatch?.activeSessionId
+      ? attentionKey(agentState.get(dispatch.activeSessionId as never))
+      : undefined
   const validBudget =
     /^\d+$/.test(budget) && Number(budget) >= 1 && Number(budget) <= 100
   useEffect(() => {
@@ -203,17 +218,26 @@ export function Dashboard(props: Props) {
     }
   }
   const phase = (item: Task): Key => {
+    const pending = taskAttention(item)[0]
+    if (pending) return pending.key
+    const currentPhases = activeTaskSessions(item)
     if (
       item.analysisSessionId &&
+      currentPhases.includes(item.analysisSessionId) &&
       agentState.get(item.analysisSessionId as never)?.running
     )
       return 'analyzing'
     if (
       item.reviewSessionId &&
+      currentPhases.includes(item.reviewSessionId) &&
       agentState.get(item.reviewSessionId as never)?.running
     )
       return 'reviewing'
-    if (item.sessionId && agentState.get(item.sessionId as never)?.running)
+    if (
+      item.sessionId &&
+      currentPhases.includes(item.sessionId) &&
+      agentState.get(item.sessionId as never)?.running
+    )
       return 'executing'
     return item.status
   }
@@ -262,10 +286,30 @@ export function Dashboard(props: Props) {
           </button>
         </div>
       </header>
+      {attention.length > 0 && (
+        <section
+          className="pd-attention"
+          role="alert"
+          aria-label={t('attention')}
+        >
+          <strong>
+            {t('attention')} · {attention.length}
+          </strong>
+          <p>{t('attentionHelp')}</p>
+          <div className="pd-actions">
+            {attention.map(({ session, key }) => (
+              <button key={session.id} onClick={() => openSession(session.id)}>
+                {t(key)} · {session.displayTitle} ↗
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       <section className="pd-stats" aria-label={t('overview')}>
         {[
           [t('total'), tasks.length, '▦'],
           [t('active'), running, '◉'],
+          [t('attention'), attention.length, '!'],
           [
             t('review'),
             tasks.filter((item) => item.status === 'in-review').length,
@@ -280,7 +324,10 @@ export function Dashboard(props: Props) {
             '↗',
           ],
         ].map(([label, value, icon]) => (
-          <div className="pd-stat" key={label}>
+          <div
+            className={`pd-stat ${label === t('attention') && attention.length ? 'is-attention' : ''}`}
+            key={label}
+          >
             <div>
               <span>{label}</span>
               <span className="pd-stat-icon" aria-hidden="true">
@@ -375,7 +422,7 @@ export function Dashboard(props: Props) {
       <section className="pd-automation" aria-label={t('automation')}>
         <div className="pd-automation-summary">
           <span
-            className={`pd-status-icon ${queueActive ? 'is-live' : ''}`}
+            className={`pd-status-icon ${queueAttention ? 'is-attention' : queueActive ? 'is-live' : ''}`}
             aria-hidden="true"
           >
             ↻
@@ -388,7 +435,7 @@ export function Dashboard(props: Props) {
                 : otherQueueActive
                   ? t('otherQueue')
                   : queueActive
-                    ? `${t('processing')} · ${dispatch?.processed}/${dispatch?.maxTasks}`
+                    ? `${t(queueAttention ?? 'processing')} · ${dispatch?.processed}/${dispatch?.maxTasks}`
                     : t('automationHelp')}
             </p>
           </div>
@@ -445,6 +492,11 @@ export function Dashboard(props: Props) {
           </div>
         )}
       </section>
+      <PermissionSettings
+        t={t}
+        loadPermissions={props.loadPermissions}
+        savePermissionDefault={props.savePermissionDefault}
+      />
       {tab === 'board' ? (
         <div className="pd-layout">
           <div className="pd-columns" aria-label={t('board')}>
@@ -469,7 +521,7 @@ export function Dashboard(props: Props) {
                     .filter((item) => item.status === status)
                     .map((item) => (
                       <button
-                        className="pd-card"
+                        className={`pd-card ${taskAttention(item).length ? 'is-attention' : ''}`}
                         key={item.id}
                         aria-pressed={selected === item.id}
                         onClick={() => setSelected(item.id)}
@@ -491,7 +543,11 @@ export function Dashboard(props: Props) {
                           {item.description || t('noDescription')}
                         </span>
                         <span className="pd-card-tags">
-                          <span className="pd-badge">{t(phase(item))}</span>
+                          <span
+                            className={`pd-badge ${taskAttention(item).length ? 'is-attention' : ''}`}
+                          >
+                            {t(phase(item))}
+                          </span>
                           {item.needsManual && (
                             <span className="pd-badge">{t('manual')}</span>
                           )}
@@ -547,7 +603,10 @@ export function Dashboard(props: Props) {
                     <small className="pd-muted">{item.id.slice(0, 8)}</small>
                   </td>
                   <td>
-                    <span className="pd-badge" data-status={item.status}>
+                    <span
+                      className={`pd-badge ${taskAttention(item).length ? 'is-attention' : ''}`}
+                      data-status={item.status}
+                    >
                       {t(phase(item))}
                     </span>
                   </td>
@@ -585,13 +644,14 @@ export function Dashboard(props: Props) {
                         <div className="pd-muted">{s.cwd}</div>
                       </td>
                       <td>
-                        <span className="pd-badge">
+                        <span
+                          className={`pd-badge ${attentionKey(state) ? 'is-attention' : ''}`}
+                        >
                           {t(
-                            state?.pendingInteraction
-                              ? 'waiting'
-                              : (state?.running ?? s.running)
+                            attentionKey(state) ??
+                              ((state?.running ?? s.running)
                                 ? 'running'
-                                : 'idle',
+                                : 'idle'),
                           )}
                         </span>
                       </td>
@@ -762,6 +822,15 @@ export function Dashboard(props: Props) {
           }
         >
           {detailError}
+          {taskAttention(task).map(({ id, key }) => (
+            <div role="alert" className="pd-attention" key={id}>
+              <strong>{t(key)}</strong>
+              <p>{t('attentionHelp')}</p>
+              <button onClick={() => openSession(id)}>
+                {t('openPendingSession')} ↗
+              </button>
+            </div>
+          ))}
           {task.completion && (
             <div className="pd-receipt">
               <span className="pd-status-icon is-live">✓</span>
@@ -812,6 +881,13 @@ export function Dashboard(props: Props) {
                         t('unavailable'))
                       : t('notStarted')}
                   </strong>
+                  {id &&
+                    activeTaskSessions(task).includes(id) &&
+                    attentionKey(agentState.get(id as never)) && (
+                      <span className="pd-badge is-attention">
+                        {t(attentionKey(agentState.get(id as never))!)}
+                      </span>
+                    )}
                   {id && (
                     <button onClick={() => openSession(id)}>
                       {t(

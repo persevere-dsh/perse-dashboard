@@ -25,7 +25,9 @@ A checked-in scenario manifest and coverage report are the acceptance inventory.
 
 Scope: dashboard issues only; GitHub issue synchronization is excluded by the user's 2026-10-18 clarification.
 
-## Implemented acceptance map (1.2.0)
+## Implemented acceptance map (1.3.0)
+
+Approval coverage was missing before 1.3: the Lab used the wrong pending kind (`permission` instead of `approval`) and no assertion checked the dashboard warning. The attention and permission-settings scenarios now cover this explicitly, and the native lane holds/rejects a real DSH approval request.
 
 | Reference capability             | Dashboard equivalent                                                                                                                          | Evidence                                                                                                                            |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -39,4 +41,4 @@ Scope: dashboard issues only; GitHub issue synchronization is excluded by the us
 | Managed simulator runner         | Assigned temporary state, inherited checkout lock, bounded phases, exact owned process-group cleanup, focused/repeated cases, failure bundles | scripts/sim + process ownership tests                                                                                               |
 | Express/staged task management   | Analysis routing, manual flag, opt-in watcher, activation budget, three completion modes                                                      | analysis-decisions / automation / execution-failure / verification-failure / recovery                                               |
 
-All 20 cases run twice without external inference in the full Lab gate. This establishes comparable test mechanisms and supported dashboard workflow coverage, not Hermex feature parity or proof of every possible interleaving. iOS targets, multi-server account management, cron, worker-log transport and GitHub Issue synchronization are outside this plugin's surface. Independent model review is fallible; exact file checks verify approved artifacts at the time of completion.
+All 22 cases run twice without external inference in the full Lab gate. This establishes comparable test mechanisms and supported dashboard workflow coverage, not Hermex feature parity or proof of every possible interleaving. iOS targets, multi-server account management, cron, worker-log transport and GitHub Issue synchronization are outside this plugin's surface. Independent model review is fallible; exact file checks verify approved artifacts at the time of completion.

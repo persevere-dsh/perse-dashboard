@@ -1,5 +1,5 @@
 /** Same Dashboard component as the native plugin; synthetic framework transport only. */
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Dashboard } from '../../src/client/view.tsx'
 import { CSS } from '../../src/client/style.ts'
@@ -107,7 +107,27 @@ function App() {
   const sessions = data?.sessions ?? [],
     workspaces = data?.workspaces ?? []
   const dictionary = locale === 'zh' ? zh : en
+  const loadPermissions = useCallback(async () => {
+    const r = await fetch('/permissions')
+    const result = await r.json()
+    if (!r.ok || !result.ok) throw Error(result.error)
+    return result.value
+  }, [])
+  const savePermissionDefault = useCallback(
+    async (preset: string, revision: number) => {
+      const r = await fetch('/permissions', {
+        method: 'POST',
+        body: JSON.stringify({ preset, revision }),
+      })
+      const result = await r.json()
+      if (!r.ok || !result.ok) throw Error(result.error)
+      return result.value
+    },
+    [],
+  )
   const props: any = {
+    loadPermissions,
+    savePermissionDefault,
     t: (key: keyof typeof en) => dictionary[key],
     useResource: () => ({ status, value: data?.snapshot }),
     useSessions: (select: any) =>

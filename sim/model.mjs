@@ -107,6 +107,21 @@ class SimulationAdapter extends LlmAdapter {
               'Independent native DSH Session read the workspace artifact using its actual bash tool.',
           },
         })
+    } else if (
+      user.includes('already claimed') &&
+      data?.description.includes('PERSE_APPROVAL_PROBE')
+    ) {
+      const id = user.match(/task ([a-f0-9-]+), version (\d+)/)
+      if (!toolResults.length) block = call('sim_request_approval', {})
+      else if (toolResults.length === 1 && id)
+        block = call('dashboard_report', {
+          taskId: id[1],
+          expectedVersion: Number(id[2]),
+          outcome: 'blocked',
+          evidence:
+            'Approval probe was resolved without granting the protected write: ' +
+            JSON.stringify(toolResults[0].content),
+        })
     } else if (user.includes('already claimed')) {
       const id = user.match(/task ([a-f0-9-]+), version (\d+)/)
       if (!toolResults.length && id)

@@ -350,6 +350,98 @@ try {
   await closeDetail()
   await page.getByRole('button', { name: '暂停后续议题', exact: true }).click()
   check('watcher stays armed between issues and can be paused from the UI')
+  if (runtime.lane === 'native') {
+    await page.getByRole('button', { name: '权限设置', exact: true }).click()
+    const permissionDialog = page.getByRole('dialog', {
+      name: 'DSH 默认执行权限',
+      exact: true,
+    })
+    await expect(
+      permissionDialog.getByRole('radio', {
+        name: '工作区内修改',
+        exact: true,
+      }),
+    ).toBeChecked()
+    await expect(permissionDialog).toContainText(
+      '已有会话和指定会话保留各自权限',
+    )
+    const catalog = await rpc('permissionPresets/catalog')
+    expect(catalog.defaultPreset).toBe('workspace-write')
+    await page
+      .getByRole('button', { name: '关闭权限设置', exact: true })
+      .click()
+    check(
+      'permission default is read from the real DSH catalog and Settings; reads do not change it',
+    )
+    await page.getByRole('button', { name: '新建任务', exact: true }).click()
+    const probe = page.locator('form.pd-create'),
+      probeTitle = 'Native pending approval visibility'
+    await probe.getByLabel('标题', { exact: true }).fill(probeTitle)
+    await probe
+      .getByLabel('任务说明', { exact: true })
+      .fill(
+        'PERSE_APPROVAL_PROBE: request a protected write, never fabricate authorization.',
+      )
+    await probe
+      .getByLabel('验收标准（每行一条）', { exact: true })
+      .fill('Protected fixture must not be written without explicit approval')
+    await probe.getByLabel('执行前自动分析议题', { exact: true }).uncheck()
+    await probe.getByLabel('完成策略', { exact: true }).selectOption('manual')
+    await probe.getByRole('button', { name: '创建任务', exact: true }).click()
+    await expect(
+      page.getByRole('dialog', { name: probeTitle, exact: true }),
+    ).toBeVisible()
+    const pendingTask = (await snapshot()).tasks.find(
+      (t) => t.title === probeTitle,
+    )
+    await closeDetail()
+    await page.getByRole('button', { name: '启动队列', exact: true }).click()
+    const attention = page.getByRole('alert', {
+      name: '需要你处理',
+      exact: true,
+    })
+    await expect(attention).toContainText('等待审批', { timeout: 15000 })
+    await expect(
+      page.locator('.pd-card').filter({ hasText: probeTitle }),
+    ).toContainText('等待审批')
+    await expect(
+      page.getByRole('region', { name: '自动化处理', exact: true }),
+    ).toContainText('等待审批')
+    const beforeApproval = (await snapshot()).tasks.find(
+      (t) => t.id === pendingTask.id,
+    )
+    expect(beforeApproval.status).toBe('in-progress')
+    expect(beforeApproval.completion).toBe(null)
+    await expect(
+      fs.stat(path.join(runtime.workspace, 'sim-approval-granted.txt')),
+    ).rejects.toThrow(/ENOENT/)
+    await page.screenshot({
+      path: path.join(run, 'pending-approval-board.png'),
+      fullPage: true,
+    })
+    await page.locator('.pd-card').filter({ hasText: probeTitle }).click()
+    await page
+      .getByRole('button', { name: '在 DSH 中查看请求 ↗', exact: true })
+      .click()
+    await expect(
+      page.getByRole('button', { name: '拒绝', exact: true }),
+    ).toBeVisible()
+    // Only this disposable simulated request is rejected. No real Desktop request is touched.
+    await page.getByRole('button', { name: '拒绝', exact: true }).click()
+    await until(
+      async () =>
+        (await snapshot()).tasks.find((t) => t.id === pendingTask.id)?.status,
+      'blocked',
+    )
+    await board()
+    await expect(attention).toHaveCount(0)
+    await expect(
+      fs.stat(path.join(runtime.workspace, 'sim-approval-granted.txt')),
+    ).rejects.toThrow(/ENOENT/)
+    check(
+      'actual DSH approval remains pending while the board warns; explicit isolated rejection clears it without granting a write or marking done',
+    )
+  }
   await fs.writeFile(
     path.join(run, 'protocol-fixture.json'),
     JSON.stringify(
