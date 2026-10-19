@@ -4,6 +4,18 @@
 
 Target: DeepSeek Harness **0.2.1-rc.2**, Cordis **4.0.5**, Node **24**. The tested local runtime comes from the installed DeepSeek Harness desktop application; no files in that application are modified. Preview APIs may change; the package pins the tested generation and the sim must run before a compatibility bump.
 
+## Runtime generation and Session logs
+
+The package pins exact DSH `0.2.1-rc.2` peers. A DSH `0.2.0-rc.2` Host skips the bundle as incompatible and prints `dsh: skipping profile bundle "perse-dashboard": ... incompatible with dsh 0.2.0-rc.2 ...`; the sidebar then has no Dashboard. That older Host also refuses Session logs written by `0.2.1-rc.2` because they contain `job/registered` or `job/settled`:
+
+```text
+历史加载失败: failed to observe session "...": ... contains event type
+"job/registered" (seq 22) unknown to this harness and not marked ignorable;
+refusing to interpret the log — it was likely written by a newer harness
+```
+
+This is the Host's Session-format boundary, not log corruption and not a plugin failure. Do not edit, downgrade or replay-skip the logs. Launch the `0.2.1-rc.2` runtime that wrote them; the same profile and installed tarball then load the Dashboard and resume the Session normally.
+
 The official design is the authority:
 
 - https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/web-client.md

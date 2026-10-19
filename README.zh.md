@@ -23,6 +23,8 @@ scripts/dsh plugin --profile desktop add ./perse-dashboard-1.4.1.tgz
 
 重启所选实例后，从原生侧栏打开“工作看板”。必须使用打包后的 tgz 安装，不使用目录链接。此仓库不会修改 DSH 应用文件。
 
+本插件及其会话历史要求 DSH **0.2.1-rc.2**。若侧栏没有“工作看板”，或打开会话显示 `resume failed` / `历史加载失败`（`unknown event type "job/registered"`），说明实际启动的是旧的 **0.2.0-rc.2** 实例。请确认正在运行的 App 版本，改用 0.2.1 实例并重启。0.2.0 会跳过这个固定版本的插件，且无法读取 0.2.1 写入的会话日志；不要降级或改写这些日志。详见[兼容性说明](docs/compatibility.md#runtime-generation-and-session-logs)。
+
 ## 分配和自动认领
 
 创建任务时写清结果和验收标准，可指定工作区中的一个会话，也可放入工作区队列。点击“准备 DSH 草稿”只准备未发送的原生输入；发送后 agent 可通过 `dashboard_claim_next` 领取任务，通过 `dashboard_report` 提交版本和证据。认领由 Host 串行、原子地决定，避免两个会话重复领取。

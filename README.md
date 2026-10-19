@@ -38,6 +38,8 @@ scripts/dsh plugin --profile desktop add ./perse-dashboard-1.4.1.tgz
 
 Restart the selected DSH instance after installing. Open **Dashboard** from its native sidebar. Installation is always tarball based; do not use `npm link` or a directory dependency. `scripts/dsh` only forwards to the unmodified CLI; it does not patch the application.
 
+The plugin and its Session history require DSH **0.2.1-rc.2**. If the sidebar has no **Dashboard**, or opening a Session shows `resume failed` / `历史加载失败` with `unknown event type "job/registered"`, an older DSH **0.2.0-rc.2** instance is running. Confirm the version of the app you actually launched, switch to the 0.2.1 app and restart it. A 0.2.0 Host skips this pinned plugin and cannot read 0.2.1 Session logs; never downgrade or edit those logs. See [compatibility](docs/compatibility.md#runtime-generation-and-session-logs).
+
 ## Agent workflow
 
 Create a task with its intended result and acceptance criteria. Choose **Prepare DSH draft** and send it after reviewing the prompt, or enable **Start queue** for the selected workspace.

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Document the DSH 0.2.1 Session-log boundary: a 0.2.0 Host skips this pinned plugin and refuses logs containing `job/registered`, so the remedy is to launch the 0.2.1 runtime rather than downgrade or edit logs.
+- Require install verification against the exact DSH app the owner runs, including Session resume, a new real-model turn and a client reload.
+
 ## 1.4.1
 
 - Remove the duplicate next-step task grid above the board. Keep recovery reasons, completion gates and actions in task details; task cards retain their compact status.

@@ -9,6 +9,17 @@
 5. Run `--lane live` when claiming model execution works. It verifies an exact file and an Agent evidence report, not just a completed API call.
 6. Review screenshots (`dashboard.png`, `mobile.png`, `dark.png`), the linked conversation and `summary.json`. State exactly which lane passed.
 
+## Install verification against the owner's runtime
+
+The simulator always boots its local `/Applications` DSH build. That is evidence for exactly that build and no other app copy. Before claiming an installation works, also:
+
+1. Record the executable path and `--version` of the DSH app the owner actually runs.
+2. Copy the owner's Home and profile to a disposable location, boot that same app (or its CLI) on an isolated port, and open an existing Session written by that build. A cross-generation log must fail with the Host's unknown-event diagnostic; a matching build must resume.
+3. Create a new Session in the isolated Host, complete one real model turn, reload the client, and open the Session again.
+4. Confirm the Dashboard slot loads and the installed client artifact realpath and SHA256 match the acceptance binding.
+
+Never point these checks at the real Home, and never describe a plugin as broken when an older Host cannot read newer Session logs. Report the exact Host version, app path and error instead.
+
 The runner holds an advisory lock inherited by owned children. It bounds package install, boot and browser execution, and terminates only process groups whose leader PID it captured at spawn. Keyboard interruption and SIGTERM take the same cleanup path. It does not terminate the user's desktop app or any service discovered by process-name matching.
 
 Failed runs retain artifacts. A failing contract, screenshot error, missing tool report, duplicate claim, stale write, package load failure or absent live result must fail the lane. Do not change assertions to make unexpected behavior pass. Deterministic model fixtures must adhere to the provider contract, including injected model-visible context messages, real tool result roles and title-generation calls.
