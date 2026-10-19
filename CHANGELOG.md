@@ -1,20 +1,38 @@
-# 1.4.1
+# Changelog
+
+## 1.4.1
 
 - Remove the duplicate next-step task grid above the board. Keep recovery reasons, completion gates and actions in task details; task cards retain their compact status.
 
-# 1.4.0
+## 1.4.0
 
-- Recover reasoning-only and missing-report stops with one bounded reminder; isolate task-local failure and preserve infrastructure pause behavior.
-- Add next-step guidance, explicit owner recovery and visible completion gates; review staged work without automatically accepting it.
+- Recover reasoning-only and missing-report stops with one bounded same-Session reminder; isolate task-local failures while infrastructure errors still pause dispatch.
+- Add next-step guidance, explicit versioned owner recovery and visible completion gates; review staged work without automatically accepting it.
 - Show readable execution sections, per-criterion review results and bounded workspace image evidence with preview.
-- Generate criteria from optional owner expectations and allow criterion editing before execution; preserve accepted evidence and native permission authority.
-- Add workflow recovery browser/native journeys and contract coverage; include the merged radio group controls from 1.2.1.
+- Generate criteria from optional owner expectations and allow criterion editing before execution; invalidate stale analysis/review and preserve accepted evidence.
+- Reuse a fully passed independent review while waiting for human acceptance; keep failed or partial reviews fresh.
+- Add workflow recovery browser/native journeys and contract coverage.
 
-# Changelog
+## 1.3.0
 
-## Unreleased
+- Show native DSH approval, question and plan-review waits across workspace attention counts, Session badges and task phases without changing task lifecycle or running semantics.
+- Display the official default permission preset and update only `permission.defaultPreset` through the owner Settings Remote with revision checks and explicit confirmation; fail closed when settings are read-only or unavailable.
+- Include dashboard analysis, execution and review Sessions in workspace-scoped attention; navigate to the native Session for the decision and never approve automatically.
+- Add attention and permission-settings Lab scenarios plus native approval hold/reject coverage; correct the fixture's pending-interaction kind.
 
-- Replace every dropdown inside the new task panel with accessible chip radio groups: workspace, priority, assigned session, completion policy and machine-check kind. Hidden native radios keep arrow-key navigation and the group caption keeps its accessible name; long dynamic session lists wrap inside a bounded scrollable surface with no text truncation. Light, dark, desktop and narrow journeys gain create-panel screenshots plus browser assertions that verify each chip selection reaches the durable task through both the Lab fixture and the packed native lane.
+## 1.2.1
+
+- Replace every dropdown inside the new task panel with accessible chip radio groups: workspace, priority, assigned session, completion policy and machine-check kind. Hidden native radios keep arrow-key navigation and the group caption keeps its accessible name; long dynamic session lists wrap inside a bounded scrollable surface with no text truncation.
+- Restore the invoking focus after nested dialogs close together.
+- Add create-panel screenshots and browser assertions that each chip selection reaches the durable task through both the Lab fixture and the packed native lane.
+
+## 1.2.0
+
+- Redesign the dashboard around a bounded canvas, metric cards, one workspace/filter toolbar, task board/list and Session table.
+- Replace inline forms and the 340px detail column with plugin-owned native HTML dialogs for create and detail, with top-layer modality, focus containment, unsaved-draft confirmation, and a shared Escape/backdrop/close dismissal path.
+- Split task detail into overview/criteria/evidence, analysis/review, completion rules/properties and activity; keep header and footer reachable while only the body scrolls.
+- Show the actual claimed execution Session before assignment fallback, execution phase and criterion progress; keep the automation budget attached to the real activation.
+- Add responsive dialog geometry, keyboard access, reduced-motion support and shared light/dark theme tokens.
 
 ## 1.1.0
 

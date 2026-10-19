@@ -25,7 +25,7 @@ A checked-in scenario manifest and coverage report are the acceptance inventory.
 
 Scope: dashboard issues only; GitHub issue synchronization is excluded by the user's 2026-10-18 clarification.
 
-## Implemented acceptance map (1.4.0)
+## Implemented acceptance map (1.4.1)
 
 Approval coverage was missing before 1.3: the Lab used the wrong pending kind (`permission` instead of `approval`) and no assertion checked the dashboard warning. The attention and permission-settings scenarios now cover this explicitly, and the native lane holds/rejects a real DSH approval request.
 
