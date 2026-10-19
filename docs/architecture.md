@@ -37,3 +37,11 @@ Lab uses the same presentation components and production controllers. `sim/lab/b
 ## Client surfaces
 
 The board, list, Session table and top-layer task dialogs share one scoped token system. Dialogs are ordinary HTML `dialog` elements inside the plugin slot, with native modality, focus return and nested draft confirmation. They neither register OS windows nor read or modify host DOM. Task properties and evidence retain their captured version while dirty; external resource changes require an explicit reload. See [UI revision](ui-redesign.md).
+
+## Permission and attention UI
+
+Native `useSessionStatus` supplies independent running and pending-interaction facts. Approval/question/plan-review takes presentation precedence without rewriting task lifecycle or running semantics. Workspace-scoped attention includes unlinked Sessions; task badges follow current phase identities only. Default permissions come from the official permission catalog and Settings namespace through a separate capability fiber, so unavailable optional services do not remove the board. No permission store is duplicated.
+
+## Workflow recovery
+
+See [workflow recovery design](workflow-recovery.md). The shared phase runner permits one report repair turn over the official native prompt/idle APIs. Task-local omissions are isolated from runtime/persistence failures. Presentation derives actionable next steps from durable task truth, the dispatcher and native Session state; it never treats an idle Agent as completion. Independent review and automatic completion are separate operations. Owner recovery and criterion editing use atomic versioned task updates. Image evidence uses the owner-only generated Remote and the registered workspace boundary.

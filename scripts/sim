@@ -5,11 +5,12 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 APP=pathlib.Path('/Applications/DeepSeek Harness.app/Contents')
 def terminate(process):
     if process is None:return True
-    with contextlib.suppress(ProcessLookupError):os.killpg(process.pid,signal.SIGTERM)
+    with contextlib.suppress(ProcessLookupError,PermissionError):os.killpg(process.pid,signal.SIGTERM)
     try:process.wait(timeout=8)
     except subprocess.TimeoutExpired:pass
-    with contextlib.suppress(ProcessLookupError):os.killpg(process.pid,signal.SIGKILL)
-    process.wait()
+    with contextlib.suppress(ProcessLookupError,PermissionError):os.killpg(process.pid,signal.SIGKILL)
+    try:process.wait(timeout=3)
+    except subprocess.TimeoutExpired:return False
     deadline=time.monotonic()+3
     while time.monotonic()<deadline:
         try:os.killpg(process.pid,0)

@@ -1,6 +1,6 @@
 {
   "name": "perse-dashboard",
-  "version": "1.2.1",
+  "version": "1.4.1",
   "description": "Native task and session dashboard for Persevere with DSH",
   "type": "module",
   "license": "MIT",
@@ -90,6 +90,7 @@
   "devDependencies": {
     "@deepseek-ai/dsh-api-remotes": "0.2.1-rc.2",
     "@deepseek-ai/dsh-api-session-controller": "^0.2.1-rc.2",
+    "@deepseek-ai/dsh-api-settings-controller": "0.2.1-rc.2",
     "@deepseek-ai/dsh-api-workspace-controller": "^0.2.1-rc.2",
     "@deepseek-ai/dsh-client-locale": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-resources": "0.2.1-rc.2",
@@ -102,6 +103,7 @@
     "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-ui-workspace": "0.2.1-rc.2",
     "@deepseek-ai/dsh-llm": "^0.2.1-rc.2",
+    "@deepseek-ai/dsh-permission-presets": "0.2.1-rc.2",
     "@deepseek-ai/dsh-token-meter": "^0.2.1-rc.2",
     "@deepseek-ai/dsh-typert-generator": "0.2.1-rc.2",
     "@deepseek-ai/dsh-typert-registry": "^0.2.1-rc.2",

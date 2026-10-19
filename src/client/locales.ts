@@ -1,4 +1,110 @@
 export const en = {
+  owner: 'Owner',
+  queueListening: 'Waiting for new eligible issues',
+  failedQueueTask: 'Inspect the task that paused this queue',
+  riskLow: 'Low risk',
+  riskMedium: 'Medium risk',
+  riskHigh: 'High risk',
+  routeExpress: 'Express',
+  routeStaged: 'Staged: human acceptance',
+  routeNeedsInfo: 'Needs clarification',
+  routeHuman: 'Human implementation',
+  nextSteps: 'Next steps',
+  openTask: 'View task',
+  nextArchived: 'Restore this task before continuing.',
+  nextDone: 'Completed with a recorded acceptance receipt.',
+  nextRunning:
+    'The linked Agent is working. Open its Session to follow progress.',
+  nextClarify:
+    'Answer the analysis questions in Properties, save, then Analyze issue again.',
+  nextBlocked:
+    'Inspect the phase Session and evidence. Retry returns unfinished work to the correct queue.',
+  nextInterrupted:
+    'The phase is unfinished but its Agent is idle. Inspect its Session, then recover the task. No execution is replayed automatically.',
+  nextAnalyze:
+    'Start the workspace queue or Analyze issue to generate a plan and acceptance criteria.',
+  nextQueued:
+    'The workspace queue will take this task within its remaining budget.',
+  nextStart:
+    'Analysis is ready. Start the workspace queue to claim and execute eligible tasks.',
+  nextHuman:
+    'Automatic completion is held by the gates below. Independent review can still collect evidence; check every criterion and accept explicitly when satisfied.',
+  nextVerify:
+    'Run verification. Passing every approved gate records completion automatically.',
+  nextReviewFailed:
+    'Independent review did not pass. Inspect each result, then recover for correction or explicitly accept after your own checks.',
+  gateManual: 'The owner selected manual acceptance.',
+  gateManualFlag: 'The owner requires manual validation.',
+  gateAnalysis: 'No analysis is available.',
+  gateStaged: 'The analysis route is staged or needs human judgment.',
+  gateRisk: 'Analysis risk is medium or high.',
+  gateCriteria: 'Acceptance criteria are missing.',
+  gateEvidence: 'Execution evidence is missing.',
+  gateChecks: 'Configure a machine check for every criterion.',
+  completionGates: 'Automatic completion gates',
+  autoEligible:
+    'Eligible: express + low risk + no manual flag. Verification must still pass.',
+  recoverTask: 'Recover task',
+  recoverHint:
+    'Recovery preserves evidence and audit history. Start the queue afterward.',
+  acceptRemaining: 'Check every criterion below before explicit acceptance.',
+  evidenceReport: 'Execution report',
+  editEvidence: 'Edit report',
+  criterionReview: 'Independent verification',
+  previewImage: 'Preview evidence image',
+  closeImage: 'Close image',
+  imageUnavailable: 'Image unavailable',
+  criteriaOptional: 'Acceptance criteria (optional)',
+  criteriaAutoHelp:
+    'Leave empty to let analysis generate verifiable criteria. You can edit them before execution.',
+  criteriaItems: 'Acceptance criteria',
+  addCriterion: 'Add criterion',
+  criterionText: 'Criterion',
+  removeCriterion: 'Remove criterion',
+  phaseMissingNote:
+    'The phase ended without its required report after one reminder. Inspect the Session and recover this task. Other tasks may continue.',
+  humanGateNote:
+    'Independent evidence is available, but owner acceptance is required by the task route, risk or manual policy.',
+  reviewFailedNote:
+    'Independent review did not verify every criterion without remaining risks.',
+  reviewMissingNote:
+    'The reviewer ended without a report after one reminder. Retry verification to start a fresh independent review.',
+  criteriaGenerated:
+    'Analysis-generated criteria can be adjusted in Properties before execution.',
+
+  closePermissionSettings: 'Close permission settings',
+  attention: 'Needs attention',
+  attentionHelp:
+    'This Session is waiting for your approval, plan review or answer. Open its native DSH conversation to inspect and respond. Waiting does not grant authorization or imply completion.',
+  waitingApproval: 'Waiting for approval',
+  waitingPlan: 'Waiting for plan review',
+  waitingAnswer: 'Waiting for answer',
+  waitingInteraction: 'Waiting for interaction',
+  openPendingSession: 'Open request in DSH',
+  defaultPermissions: 'DSH default permissions',
+  permissionScope:
+    'Applies to all future DSH Sessions, including dashboard analysis, execution and review.',
+  permissionExisting:
+    'Existing and assigned Sessions retain their own permissions. Changing this default does not decide any pending request.',
+  permissionSettings: 'Permission settings',
+  permissionWorkspace: 'Workspace write',
+  permissionFull: 'Full access',
+  permissionReadOnly: 'Read only',
+  permissionUnavailable: 'Permission settings unavailable',
+  refreshPermissions: 'Refresh permissions',
+  permissionReadOnlySettings: 'This DSH settings provider is read-only.',
+  permissionDefaultChoice: 'Default for new Sessions',
+  savePermissionDefault: 'Save default',
+  confirmPermissionDefault: 'Change the DSH permission default?',
+  confirmPermissionSave: 'Confirm and save default',
+  permissionAcknowledge:
+    'I understand this affects future Sessions and does not approve pending requests.',
+  permissionFullWarning:
+    'Full access removes sandbox restrictions and individual approval prompts. Save it only after explicitly choosing and confirming this scope.',
+  permissionApprovalHelp:
+    'Approve or reject individual requests in the native conversation. The dashboard never grants permission automatically.',
+  permissionSaved: 'The DSH default was saved and read back.',
+
   overview: 'Overview',
   view: 'View',
   taskList: 'Task list',
@@ -148,6 +254,97 @@ export const en = {
 } as const
 export type Key = keyof typeof en
 export const zh: Record<Key, string> = {
+  owner: '所有者',
+  queueListening: '等待可处理的新议题',
+  failedQueueTask: '查看导致队列暂停的任务',
+  riskLow: '低风险',
+  riskMedium: '中风险',
+  riskHigh: '高风险',
+  routeExpress: '快速处理',
+  routeStaged: '分阶段，保留人工验收',
+  routeNeedsInfo: '需补充信息',
+  routeHuman: '需人工实施',
+  nextSteps: '接下来怎么做',
+  openTask: '查看任务',
+  nextArchived: '此任务已归档，恢复后才能继续。',
+  nextDone: '已完成，验收凭据已记录。',
+  nextRunning: '关联 Agent 正在运行，可打开会话查看进度。',
+  nextClarify: '在“属性”中补充问题答案并保存，再点击“分析议题”。',
+  nextBlocked: '查看阶段会话与阻塞原因；“恢复任务”会将未完成工作退回正确阶段。',
+  nextInterrupted:
+    '阶段尚未完成，但 Agent 已空闲。先查看会话，再恢复任务；系统不会静默重跑。',
+  nextAnalyze: '启动工作区队列，或点击“分析议题”生成计划和验收标准。',
+  nextQueued: '工作区队列会在剩余预算内处理此任务。',
+  nextStart: '分析已完成；启动工作区队列后即可认领和执行待处理任务。',
+  nextHuman:
+    '下列规则保留了人工验收。仍可运行独立复核收集证据；核对并勾选全部标准后，点击“验收并完成”。',
+  nextVerify: '运行验证；通过全部已批准规则后会自动记录为完成。',
+  nextReviewFailed:
+    '独立复核未通过。逐项查看结果，恢复任务进行修正，或自行核验后明确验收。',
+  gateManual: '完成策略为人工验收。',
+  gateManualFlag: '任务被标记为需要人工验证。',
+  gateAnalysis: '尚无分析结论。',
+  gateStaged: '分析路线不是快速处理，需要人工判断。',
+  gateRisk: '分析风险为中或高。',
+  gateCriteria: '缺少验收标准。',
+  gateEvidence: '缺少执行证据。',
+  gateChecks: '必须为每条验收标准配置机器检查。',
+  completionGates: '自动完成条件',
+  autoEligible: '符合快速、低风险、无需人工标记的条件；仍须通过全部验证。',
+  recoverTask: '恢复任务',
+  recoverHint: '恢复会保留证据和审计记录，随后可启动队列。',
+  acceptRemaining: '请逐项核对并勾选下方验收标准，再明确验收。',
+  evidenceReport: '执行报告',
+  editEvidence: '编辑报告',
+  criterionReview: '独立核验',
+  previewImage: '预览证据图片',
+  closeImage: '关闭图片',
+  imageUnavailable: '图片暂不可用',
+  criteriaOptional: '验收标准（可选）',
+  criteriaAutoHelp: '可留空，由分析 Agent 拆分为可验证标准；执行前可编辑。',
+  criteriaItems: '验收标准',
+  addCriterion: '添加标准',
+  criterionText: '标准',
+  removeCriterion: '移除标准',
+  phaseMissingNote:
+    '阶段在一次补报提醒后仍未提交报告。请查看会话并恢复此任务；其余任务可以继续。',
+  humanGateNote:
+    '独立核验已收集证据，但任务路线、风险或人工策略仍要求所有者验收。',
+  reviewFailedNote: '独立复核未能无保留地验证全部标准。',
+  reviewMissingNote: '复核者在一次提醒后仍未报告；重新验证可启动新的独立复核。',
+  criteriaGenerated: '分析生成的验收标准可在执行前通过“属性”调整。',
+
+  closePermissionSettings: '关闭权限设置',
+  attention: '需要你处理',
+  attentionHelp:
+    '此会话正在等待权限审批、计划确认或回答。请打开原生 DSH 会话查看并处理；等待交互不代表已授权或已完成。',
+  waitingApproval: '等待审批',
+  waitingPlan: '等待计划确认',
+  waitingAnswer: '等待回答',
+  waitingInteraction: '等待交互',
+  openPendingSession: '在 DSH 中查看请求',
+  defaultPermissions: 'DSH 默认执行权限',
+  permissionScope: '作用于后续所有 DSH 新会话，包括看板的分析、执行和复核。',
+  permissionExisting:
+    '已有会话和指定会话保留各自权限。修改默认值不会批准或拒绝当前挂起的请求。',
+  permissionSettings: '权限设置',
+  permissionWorkspace: '工作区内修改',
+  permissionFull: '完全访问',
+  permissionReadOnly: '只读',
+  permissionUnavailable: '权限设置不可用',
+  refreshPermissions: '刷新权限',
+  permissionReadOnlySettings: '当前 DSH 设置提供方不允许修改。',
+  permissionDefaultChoice: '新会话默认权限',
+  savePermissionDefault: '保存默认权限',
+  confirmPermissionDefault: '修改 DSH 默认执行权限？',
+  confirmPermissionSave: '确认并保存默认权限',
+  permissionAcknowledge: '我了解此设置影响后续新会话，不会批准当前挂起的请求。',
+  permissionFullWarning:
+    '完全访问会关闭沙箱限制和逐次审批提示，只有在明确选择并确认这一作用范围后才会保存。',
+  permissionApprovalHelp:
+    '单次请求的允许或拒绝请在原生会话中决定，看板不会自动授权。',
+  permissionSaved: 'DSH 默认权限已保存并回读确认。',
+
   overview: '概览',
   view: '视图',
   taskList: '任务列表',
@@ -268,7 +465,7 @@ export const zh: Record<Key, string> = {
   audit: '活动记录',
   move: '移动任务',
   unavailable: '会话不可用',
-  host: '当前 DSH Host',
+  host: '当前连接的 DSH',
   noSessions: '此工作区暂无会话',
   version: '版本',
   error: '操作失败',

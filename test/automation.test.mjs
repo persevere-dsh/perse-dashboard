@@ -111,7 +111,7 @@ test('needs-info and human analysis never become executable; staged and manual f
     assert.equal(held.analysis.route, 'staged')
     assert.equal(held.status, 'in-review')
     assert.equal(held.completion, null)
-    assert.match(held.automationNote, /held/)
+    assert.match(held.automationNote, /human-acceptance-required/)
   }))
 test('old stored data migrates to manual completion without silently authorizing automation', () =>
   harness(async (b) => {

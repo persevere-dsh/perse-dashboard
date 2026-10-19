@@ -31,9 +31,9 @@ npm ci
 npm run check
 npm pack
 # Standard CLI:
-dsh plugin --profile web add ./perse-dashboard-1.2.1.tgz
+dsh plugin --profile web add ./perse-dashboard-1.4.1.tgz
 # This Mac's installed DSH Desktop CLI, if dsh is not on PATH:
-scripts/dsh plugin --profile desktop add ./perse-dashboard-1.2.1.tgz
+scripts/dsh plugin --profile desktop add ./perse-dashboard-1.4.1.tgz
 ```
 
 Restart the selected DSH instance after installing. Open **Dashboard** from its native sidebar. Installation is always tarball based; do not use `npm link` or a directory dependency. `scripts/dsh` only forwards to the unmodified CLI; it does not patch the application.
@@ -67,7 +67,7 @@ npm run sim -- --lane live
 npm run sim -- --lane native --keep
 ```
 
-- **lab** provides 20 selectable scenarios with complete task/session/workspace data and a stateful backend built from the production BoardController, Dispatcher and CompletionCoordinator. It scripts only DSH execution and transport faults; no external model or installed DSH is required. Focus one case with `--scenario offline`; repeat with `--repeat 2`. Each case needs behavioral assertions.
+- **lab** provides 23 selectable scenarios with complete task/session/workspace data and a stateful backend built from the production BoardController, Dispatcher and CompletionCoordinator. It scripts only DSH execution and transport faults; no external model or installed DSH is required. Focus one case with `--scenario offline`; repeat with `--repeat 2`. Each case needs behavioral assertions.
 - **native** uses the actual installed DSH Host, native browser UI, Gateway, Session Controller, Agent loop, tools and storage. Only the model adapter is deterministic; no external model is called.
 - **live** copies the configured credential file into the private disposable home, uses the real default provider/model, asks it to write and read an exact file inside the disposable workspace, and removes the copied credential on cleanup. Credentials never enter the package or result report. Set `PERSEVERE_DSH_CREDENTIALS` for another credential file.
 - `--keep` retains the **test instance** after the browser checks for visible inspection; Ctrl-C cleans up only that run's processes.

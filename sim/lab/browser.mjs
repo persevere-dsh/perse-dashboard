@@ -95,7 +95,7 @@ async function create(
     .getByLabel('Description', { exact: true })
     .fill('Produce an isolated verified result')
   await f
-    .getByLabel('Acceptance criteria (one per line)', { exact: true })
+    .getByLabel('Acceptance criteria (optional)', { exact: true })
     .fill('The isolated result is correct')
   await f
     .getByLabel('Analyze issue before execution', { exact: true })
@@ -152,7 +152,7 @@ try {
     results.push({ scenario: id, passed: false, assertions: [] })
     await choose(id)
     const cards = page.locator('.pd-card'),
-      alert = page.getByRole('alert')
+      alert = page.locator('.pd-banner[role=alert]')
     if (id === 'first-load') {
       await expect(
         page.getByText('Connecting to DSH…', { exact: true }),
@@ -307,7 +307,7 @@ try {
       await page.getByRole('button', { name: 'Sessions', exact: true }).click()
       await expect(page.locator('tbody tr')).toHaveCount(6)
       await expect(page.locator('tbody')).toContainText('Running')
-      await expect(page.locator('tbody')).toContainText('Needs input')
+      await expect(page.locator('tbody')).toContainText('Waiting for approval')
       await page
         .getByRole('button', { name: 'Task board', exact: true })
         .click()
@@ -527,6 +527,257 @@ try {
         .assertions.push(
           'Partial, refused, high-risk, failed, risky and absent reviewer plus wrong file cannot reach done',
         )
+    } else if (id === 'attention') {
+      const issue = await create('Approval wait stays visible', {
+        mode: 'manual',
+        intake: false,
+      })
+      await closeDetail()
+      await api('/control', {
+        action: 'script',
+        id: issue.id,
+        script: { holdPhase: 'execution' },
+      })
+      await page
+        .getByRole('button', { name: 'Start queue', exact: true })
+        .click()
+      await expect
+        .poll(async () => (await task(issue.id)).status)
+        .toBe('in-progress')
+      const active = await task(issue.id),
+        nativeId = active.sessionId
+      const wait = async (kind) =>
+        api('/control', { action: 'interaction', id: nativeId, kind })
+      await wait('approval')
+      const banner = page.getByRole('alert', {
+        name: 'Needs attention',
+        exact: true,
+      })
+      await expect(banner).toContainText('Waiting for approval')
+      await expect(cards.filter({ hasText: issue.title })).toContainText(
+        'Waiting for approval',
+      )
+      await expect(
+        page.getByRole('region', { name: 'Automation', exact: true }),
+      ).toContainText('Waiting for approval')
+      expect((await task(issue.id)).version).toBe(active.version)
+      expect(
+        (await data()).sessions.find((s) => s.id === nativeId).running,
+      ).toBe(true)
+      await page.screenshot({ path: path.join(run, 'approval-board.png') })
+      await openTask(issue.id)
+      await expect(page.getByRole('dialog')).toContainText(
+        'Waiting for approval',
+      )
+      await page
+        .getByRole('button', { name: 'Open request in DSH ↗', exact: true })
+        .click()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await expect(
+        page
+          .getByRole('status')
+          .filter({ hasText: 'Opened synthetic Session' }),
+      ).toContainText(nativeId)
+      expect(
+        (await data()).sessions.find((s) => s.id === nativeId)
+          .pendingInteraction.kind,
+      ).toBe('approval')
+      await page
+        .getByLabel('All workspaces', { exact: true })
+        .selectOption('beta')
+      await expect(banner).toHaveCount(0)
+      await page
+        .getByLabel('All workspaces', { exact: true })
+        .selectOption('alpha')
+      await expect(banner).toBeVisible()
+      for (const [kind, label] of [
+        ['question', 'Waiting for answer'],
+        ['plan-review', 'Waiting for plan review'],
+        ['future-kind', 'Waiting for interaction'],
+      ]) {
+        await wait(kind)
+        await expect(cards.filter({ hasText: issue.title })).toContainText(
+          label,
+        )
+      }
+      await wait(null)
+      await expect(banner).toHaveCount(0)
+      await expect(cards.filter({ hasText: issue.title })).toContainText(
+        'Executing',
+      )
+      expect((await task(issue.id)).status).toBe('in-progress')
+      await api('/control', { action: 'release', id: issue.id })
+      await expect
+        .poll(async () => (await task(issue.id)).status)
+        .toBe('in-review')
+      await expect
+        .poll(async () => (await data()).snapshot.dispatch.enabled)
+        .toBe(false)
+      const phased = await create('Analysis and review approval waits')
+      await closeDetail()
+      await api('/control', {
+        action: 'script',
+        id: phased.id,
+        script: { holdPhase: 'analysis' },
+      })
+      await page
+        .getByRole('button', { name: 'Start queue', exact: true })
+        .click()
+      await expect
+        .poll(async () => (await task(phased.id)).analysisSessionId)
+        .toBeTruthy()
+      const analyst = (await task(phased.id)).analysisSessionId
+      await api('/control', {
+        action: 'interaction',
+        id: analyst,
+        kind: 'approval',
+      })
+      await expect(cards.filter({ hasText: phased.title })).toContainText(
+        'Waiting for approval',
+      )
+      await api('/control', {
+        action: 'script',
+        id: phased.id,
+        script: { holdPhase: 'review' },
+      })
+      await api('/control', { action: 'interaction', id: analyst, kind: null })
+      await api('/control', { action: 'release', id: phased.id })
+      await expect
+        .poll(async () => (await task(phased.id)).reviewSessionId)
+        .toBeTruthy()
+      const reviewer = (await task(phased.id)).reviewSessionId
+      await api('/control', {
+        action: 'interaction',
+        id: reviewer,
+        kind: 'approval',
+      })
+      await expect(cards.filter({ hasText: phased.title })).toContainText(
+        'Waiting for approval',
+      )
+      expect((await task(phased.id)).status).toBe('in-review')
+      expect((await task(phased.id)).completion).toBe(null)
+      await api('/control', { action: 'interaction', id: reviewer, kind: null })
+      await api('/control', { action: 'release', id: phased.id })
+      await expect.poll(async () => (await task(phased.id)).status).toBe('done')
+      results
+        .at(-1)
+        .assertions.push(
+          'Native status facts remain independent; current analysis/execution/review approval waits take precedence; queue warning, scoped attention and links; questions/plan/unknown kinds; resolution never fabricates completion',
+        )
+    } else if (id === 'permission-settings') {
+      const settings = page.getByRole('dialog', {
+        name: 'DSH default permissions',
+        exact: true,
+      })
+      const current = async () => (await api('/permissions')).value
+      const confirm = page.getByRole('alertdialog', {
+        name: 'Change the DSH permission default?',
+        exact: true,
+      })
+      await expect(
+        page.getByRole('region', {
+          name: 'DSH default permissions',
+          exact: true,
+        }),
+      ).toContainText('Workspace write')
+      await page
+        .getByRole('button', { name: 'Permission settings', exact: true })
+        .click()
+      await expect(settings).toBeVisible()
+      await page
+        .getByRole('radio', { name: 'Full access', exact: true })
+        .check()
+      await page
+        .getByRole('button', { name: 'Save default', exact: true })
+        .click()
+      await expect(confirm).toBeVisible()
+      expect((await current()).currentValue).toBe('workspace-write')
+      await expect(
+        confirm.getByRole('button', {
+          name: 'Confirm and save default',
+          exact: true,
+        }),
+      ).toBeDisabled()
+      await confirm
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .last()
+        .click()
+      expect((await current()).currentValue).toBe('workspace-write')
+      await page
+        .getByRole('button', { name: 'Save default', exact: true })
+        .click()
+      await confirm.getByRole('checkbox').check()
+      await confirm
+        .getByRole('button', { name: 'Confirm and save default', exact: true })
+        .click()
+      await expect(settings).toContainText('saved and read back')
+      expect((await current()).currentValue).toBe('danger-full-access')
+      expect(
+        (await data()).sessions.every(
+          (s) =>
+            s.projectionValues.permissions.currentValue === 'workspace-write',
+        ),
+      ).toBe(true)
+      await page
+        .getByRole('radio', { name: 'Workspace write', exact: true })
+        .check()
+      await api('/control', {
+        action: 'permissions',
+        preset: 'workspace-write',
+      })
+      await page
+        .getByRole('button', { name: 'Save default', exact: true })
+        .click()
+      await confirm.getByRole('checkbox').check()
+      await confirm
+        .getByRole('button', { name: 'Confirm and save default', exact: true })
+        .click()
+      await expect(settings.getByRole('alert')).toContainText(
+        'changed; refresh and retry',
+      )
+      await page
+        .getByRole('button', { name: 'Refresh permissions', exact: true })
+        .click()
+      await expect(
+        page.getByRole('radio', { name: 'Workspace write', exact: true }),
+      ).toBeChecked()
+      await api('/control', { action: 'permissions', writable: false })
+      await page
+        .getByRole('button', { name: 'Refresh permissions', exact: true })
+        .click()
+      await expect(settings).toContainText('provider is read-only')
+      await expect(
+        page.getByRole('radio', { name: 'Full access', exact: true }),
+      ).toBeDisabled()
+      await api('/control', { action: 'permissions', available: false })
+      await page
+        .getByRole('button', { name: 'Refresh permissions', exact: true })
+        .click()
+      await expect(settings.getByRole('alert')).toContainText('unavailable')
+      await api('/control', {
+        action: 'permissions',
+        available: true,
+        writable: true,
+      })
+      await page
+        .getByRole('button', { name: 'Refresh permissions', exact: true })
+        .click()
+      await expect(
+        page.getByRole('radio', { name: 'Workspace write', exact: true }),
+      ).toBeEnabled()
+      await page.screenshot({ path: path.join(run, 'permission-settings.png') })
+      await page
+        .getByRole('button', { name: 'Close permission settings', exact: true })
+        .click()
+      await api('/control', { action: 'restart' })
+      await page.reload()
+      expect((await current()).currentValue).toBe('workspace-write')
+      expect((await data()).snapshot.tasks).toHaveLength(0)
+      results
+        .at(-1)
+        .assertions.push(
+          'No permission write on read/cancel; explicit scope confirmation and acknowledgement; revision conflict refuses stale edits; existing Sessions unchanged; provider read-only/unavailable recovery; default persists through restart',
+        )
     } else if (id === 'ui-journeys') {
       await expect(cards).toHaveCount(7)
       const noPageOverflow = async () =>
@@ -682,7 +933,7 @@ try {
         .getByLabel('Description', { exact: true })
         .fill('Every chip group selection must reach the durable task payload')
       await chipForm
-        .getByLabel('Acceptance criteria (one per line)', { exact: true })
+        .getByLabel('Acceptance criteria (optional)', { exact: true })
         .fill('Chip selections persist')
       const workspaceChips = chipForm.getByRole('radiogroup', {
         name: 'All workspaces',
@@ -886,6 +1137,121 @@ try {
         .assertions.push(
           'Native modal keeps board width; Escape/backdrop restore focus; nested draft protection covers close and Session navigation; stale edits retained; list/activity navigation; queue ownership and budget survive reload; both themes and narrow geometry',
         )
+    } else if (id === 'workflow-recovery') {
+      const bad = await create('Missing phase report')
+      await api('/control', {
+        action: 'script',
+        id: bad.id,
+        script: { missingAnalysis: true },
+      })
+      const good = await create('Reasoning-only recovery')
+      await api('/control', {
+        action: 'script',
+        id: good.id,
+        script: { missingAnalysisOnce: true },
+      })
+      await outside('Start queue')
+      await expect.poll(async () => (await task(bad.id)).status).toBe('blocked')
+      await expect.poll(async () => (await task(good.id)).status).toBe('done')
+      expect((await data()).snapshot.dispatch.error).toBeNull()
+      await expect(page.locator('.pd-next-steps,.pd-next-grid')).toHaveCount(0)
+      await expect(
+        page.locator('.pd-card').filter({ hasText: 'Missing phase report' }),
+      ).toContainText('Blocked')
+      await openTask(bad.id)
+      await expect(page.locator('.pd-next-detail')).toContainText(
+        'Other tasks may continue',
+      )
+      await page
+        .getByRole('button', { name: 'Recover task', exact: true })
+        .click()
+      await expect.poll(async () => (await task(bad.id)).status).toBe('triage')
+      await api('/control', { action: 'script', id: bad.id, script: {} })
+      await queue(bad.id, 'done')
+      const staged = await create('Staged evidence with screenshot')
+      await api('/control', {
+        action: 'script',
+        id: staged.id,
+        script: {
+          route: 'staged',
+          risk: 'medium',
+          images: [
+            {
+              path: 'proof.png',
+              caption: 'Verified visible result',
+              criterion: 0,
+            },
+          ],
+        },
+      })
+      await queue(staged.id, 'in-review')
+      expect((await task(staged.id)).review.verdict).toBe('pass')
+      expect((await task(staged.id)).completion).toBeNull()
+      await expect(page.locator('.pd-next-detail')).toContainText(
+        'medium or high',
+      )
+      await expect(page.locator('.pd-criterion-result')).toContainText(
+        'Independent verification',
+      )
+      const img = page.locator('.pd-image-evidence img')
+      await expect(img).toBeVisible()
+      await expect.poll(() => img.evaluate((el) => el.naturalWidth)).toBe(1)
+      await page
+        .getByRole('button', {
+          name: 'Preview evidence image: Verified visible result',
+          exact: true,
+        })
+        .click()
+      await expect(page.locator('.pd-image-preview')).toBeVisible()
+      await page
+        .getByRole('button', { name: 'Close image', exact: true })
+        .click()
+      const reviewer = (await task(staged.id)).reviewSessionId
+      await page
+        .getByRole('button', {
+          name: 'Retry automatic verification',
+          exact: true,
+        })
+        .click()
+      await expect
+        .poll(async () => (await task(staged.id)).automationNote)
+        .toBe('human-acceptance-required')
+      expect((await task(staged.id)).reviewSessionId).toBe(reviewer)
+      await page.screenshot({
+        path: path.join(run, 'workflow-staged-evidence.png'),
+        fullPage: true,
+      })
+      await closeDetail()
+      const clarify = await create('Clarification and criteria editing')
+      await api('/control', {
+        action: 'script',
+        id: clarify.id,
+        script: { route: 'needs-info' },
+      })
+      await queue(clarify.id, 'needs-info')
+      await page
+        .getByRole('tab', { name: 'Properties & rules', exact: true })
+        .click()
+      await page.getByText('Edit task', { exact: true }).click()
+      await page
+        .getByLabel('Criterion 1', { exact: true })
+        .fill('Owner clarified observable output')
+      await page
+        .locator('.pd-detail details')
+        .filter({ has: page.getByLabel('Criterion 1', { exact: true }) })
+        .getByRole('button', { name: 'Save', exact: true })
+        .click()
+      await expect
+        .poll(async () => (await task(clarify.id)).status)
+        .toBe('triage')
+      expect((await task(clarify.id)).criteria).toEqual([
+        'Owner clarified observable output',
+      ])
+      results
+        .at(-1)
+        .assertions.push(
+          'Missing reports are bounded and isolated; owner recovery resumes; staged review collects image evidence without auto-acceptance; preview and criterion editing work',
+        )
     } else if (id === 'recovery') {
       const completed = await create('Sessions survive recovery')
       await queue(completed.id, 'done')
@@ -912,6 +1278,15 @@ try {
         .toBe('in-progress')
       expect((await data()).snapshot.dispatch.enabled).toBe(false)
       expect((await task(t.id)).version).toBe(2)
+      await openTask(t.id)
+      await expect(page.locator('.pd-next-detail')).toContainText(
+        'Agent is idle',
+      )
+      await page
+        .getByRole('button', { name: 'Recover task', exact: true })
+        .click()
+      await expect.poll(async () => (await task(t.id)).status).toBe('todo')
+      expect((await task(t.id)).sessionId).toBeNull()
       const ids = new Set((await data()).sessions.map((s) => s.id))
       expect(phaseIds.every((id) => ids.has(id))).toBe(true)
       results

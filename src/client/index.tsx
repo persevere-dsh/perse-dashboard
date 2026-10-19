@@ -11,6 +11,8 @@ import REMOTE from 'perse-dashboard/remote'
 import { en, zh } from './locales.ts'
 import { CSS } from './style.ts'
 import { createDashboardStore } from './store.ts'
+import { permissionControls } from './permission-api.ts'
+import type { PermissionControls } from './permissions.tsx'
 import { Dashboard, DashboardIcon, type Injected } from './view.tsx'
 import type { DashboardSnapshot } from '../contract/types.ts'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -73,7 +75,46 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         },
       })
       const store = createDashboardStore()
+      let permissionProvider: PermissionControls | undefined
+      // Optional capability fiber: missing settings must not hide the task board.
+      scope.inject(
+        ['remote.permissionPresets', 'remote.settings'],
+        (permissionScope) => {
+          const provider = permissionControls({
+            catalog: () => permissionScope.remote.permissionPresets.catalog(),
+            describe: () => permissionScope.remote.settings.describe(),
+            mutate: (ns, ops, revision) =>
+              permissionScope.remote.settings.mutate(ns, ops, revision),
+          })
+          permissionProvider = provider
+          permissionScope.effect(
+            () => () => {
+              if (permissionProvider === provider)
+                permissionProvider = undefined
+            },
+            'dashboard permission capability',
+          )
+        },
+      )
+      const permissions: PermissionControls = {
+        async loadPermissions() {
+          if (!permissionProvider)
+            throw Error('DSH permission settings are unavailable')
+          return permissionProvider.loadPermissions()
+        },
+        async savePermissionDefault(preset, revision) {
+          if (!permissionProvider)
+            throw Error('DSH permission settings are unavailable')
+          return permissionProvider.savePermissionDefault(preset, revision)
+        },
+      }
       const injected = (): Injected => ({
+        ...permissions,
+        image: async (request) => {
+          const result = await scope.remote.perseDashboard.image(request)
+          if (!result.ok) throw result.error
+          return result.value
+        },
         create: async (request) => {
           const result = await scope.remote.perseDashboard.create(request)
           if (!result.ok) throw result.error

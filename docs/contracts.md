@@ -17,7 +17,7 @@ DSH owns registered Workspaces and Sessions. Every agent phase checks the actual
 
 ## Commands and durability
 
-Remote namespace `perseDashboard`: snapshot, create, update, dispatch, analyze, verify, watch. All are owner-only under DSH policy and checked at the service boundary. No production HTTP service outside DSH Gateway is introduced.
+Remote namespace `perseDashboard`: snapshot, create, update, dispatch, analyze, verify, image, watch. All are owner-only under DSH policy and checked at the service boundary. No production HTTP service outside DSH Gateway is introduced.
 
 Task mutations create/update and agent reports carry a requestId; updates and phase reports also carry expectedVersion. The Host serializes decisions and atomically commits task + ledger + dedup receipt in one Storage Domain global write, before publishing or returning success. An identical request returns its original result; reusing its id with a different payload or actor fails. Stale writes fail without a phantom revision. Receipts are retained across restart within the bounded storage retention policy.
 
@@ -31,12 +31,16 @@ Manual acceptance requires nonempty evidence, at least one criterion, every crit
 
 File checks compare exact UTF-8 text or SHA256 for a bounded regular file inside the registered workspace. They reject absolute paths, traversal and escaping symlinks. They are point-in-time checks; they do not prove future immutability or arbitrary program correctness. A reviewer is another model Session, not a human or an independent formal verifier. The selected owner policy is the authority to use this evidence.
 
-Failure, cancellation, missing reports and failed/partial review never imply done. Errors remain visible. Restart preserves task state, disarms dispatch, and never replays an old in-progress claim. Explicitly inspect and requeue stuck work; a pending automatic verification can be retried from its detail panel. Pause stops subsequent issues; native DSH controls stop an active Agent.
+Failure, cancellation, missing reports and failed/partial review never imply done. Each phase has at most one same-Session report reminder after idle; execution reminders forbid repeating side effects. A repeated omission blocks only that task, while infrastructure failures pause dispatch. Owner `update/retry` restores unanalyzed intake to triage and already analyzed or manual execution to todo; it retains evidence and audit history. Lifecycle changes are also blocked while phase preparation or completion jobs are active. Errors remain visible. Restart preserves task state, disarms dispatch, and never replays an old in-progress claim. Explicitly inspect and requeue stuck work; a pending automatic verification can be retried from its detail panel. Pause stops subsequent issues; native DSH controls stop an active Agent.
 
 ## Client and compatibility
 
 The native resource starts with a full replacement snapshot and reconnect replaces its baseline. Command responses do not overwrite the streamed task resource. Unknown fields are tolerated; malformed/incompatible task generations disable mutation and retain a last confirmed baseline. Scope, rule and lifecycle changes are rejected while a linked execution/analysis/review Agent is running. Accepted evidence is frozen until explicit reopening. Archives preserve evidence and have a restore path.
 
+Optional image attachments and a persisted review prompt hash are additive fields; old tasks default to no images/no hash. `image` is an owner-only, bounded read of a recorded workspace-relative PNG/JPEG/WebP attachment, with path and symlink confinement. Criterion edits before execution invalidate analysis and review. Needs-info/human reports may have no criteria; executable routes cannot. Independent review can collect evidence for staged work, with automatic completion still held for explicit owner acceptance.
+
 Domain storage stays version 1 with defaults for the new optional persisted fields; the wire vocabulary and rule generation are v2. This is a forward migration: old plugin builds are not guaranteed to read triage/needs-info states; back up the isolated profile before downgrading. DSH preview APIs remain pinned to the tested runtime generation.
 
 UI editing captures the task version when the draft begins. A streamed version change preserves the draft and disables its save until explicit reload; successful saves still use the existing expectedVersion gate. Closing a dirty task, creating draft or navigating to a linked Session requires draft dismissal. Native modal background inertness prevents simultaneous workspace/filter changes. The UI never infers completion from the current tab or visual execution state.
+
+Approval wait is an execution substate, not completion review or a durable task transition. Dashboard controls only navigate to the native Session; no Remote/tool here decides an approval. Permission defaults are read from the DSH catalog and updated only as `permission.defaultPreset` through the owner Settings Remote, with advertised choices, the captured revision and explicit client confirmation. This global default affects subsequently created Sessions. Existing Sessions and pending decisions retain their current state. Missing/read-only settings are visible and fail closed. See [approval awareness](approval-awareness.md).

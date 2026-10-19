@@ -297,6 +297,26 @@
       "id": "ui-journeys",
       "description": "Modal navigation, nested draft protection, stale edits, focus, chip radio group selection into durable tasks, responsive geometry and theme",
       "seed": "dense"
+    },
+    {
+      "id": "attention",
+      "description": "Official approval/question/plan attention across phases, queue waiting, resolution and workspace isolation",
+      "seed": "empty"
+    },
+    {
+      "id": "permission-settings",
+      "description": "Official default settings model, explicit confirmation, optimistic conflict, read-only/unavailable and durable recovery",
+      "seed": "empty"
+    },
+    {
+      "id": "workflow-recovery",
+      "seed": "empty",
+      "assertions": [
+        "bounded report repair and task-local isolation",
+        "explicit owner recovery",
+        "staged review and human completion gates",
+        "structured criteria and image evidence"
+      ]
     }
   ]
 }

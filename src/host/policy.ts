@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { open, realpath } from 'node:fs/promises'
 import path from 'node:path'
 import type { Task, CriterionResult } from '../contract/types.ts'
-export const RULE_VERSION = 'completion/2'
+export const RULE_VERSION = 'completion/3'
 export const manualPolicy = () => ({
   mode: 'manual' as const,
   instructions: '',

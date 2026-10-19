@@ -63,14 +63,15 @@ test('bounded native dispatch consumes queue and never auto-accepts', async () =
   assert.ok(c.snapshot().tasks.every((t) => t.status === 'in-review'))
   assert.equal(d.snapshot().enabled, false)
 })
-test('missing evidence halts the queue and records blocked state', async () => {
+test('missing reports receive one reminder per task and do not stall later issues', async () => {
   const { c, d, calls } = await setup(false)
   d.configure('ws', true)
   await new Promise((r) => setTimeout(r, 30))
-  assert.equal(calls(), 1)
+  assert.equal(calls(), 4)
   assert.equal(c.snapshot().tasks[0].status, 'blocked')
-  assert.match(d.snapshot().error, /without reporting/)
-  assert.equal(c.snapshot().tasks[1].status, 'todo')
+  assert.equal(d.snapshot().error, null)
+  assert.equal(c.snapshot().tasks[0].automationNote, 'phase-report-missing')
+  assert.equal(c.snapshot().tasks[1].status, 'blocked')
 })
 test('pause prevents starting subsequent work', async () => {
   const { d, calls } = await setup()

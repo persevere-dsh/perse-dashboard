@@ -10,6 +10,7 @@ import {
   RULE_VERSION,
 } from './policy.ts'
 import { reviewPrompt } from './prompts.ts'
+import { runPhase } from './phases.ts'
 export class CompletionCoordinator {
   private jobs = new Map<string, Promise<Task>>()
   private tail: Promise<unknown> = Promise.resolve()
@@ -19,6 +20,9 @@ export class CompletionCoordinator {
     private runtime: DispatchRuntime,
     private workspacePath: (id: string) => string,
   ) {}
+  active(id: string) {
+    return this.jobs.has(id)
+  }
   close() {
     this.closed = true
   }
@@ -51,29 +55,52 @@ export class CompletionCoordinator {
       if (this.closed) return this.task(id)
       task = this.task(id)
       if (task.status !== 'in-review' || task.archived) return task
-      if (!canAutoComplete(task))
-        return this.board.note(
-          id,
-          task.version,
-          'Automatic completion held: only an express, low-risk issue without a manual flag is eligible. Human acceptance remains available.',
-        )
       let promptHash = digest({
         rule: RULE_VERSION,
         policy: task.completionPolicy,
       })
+      const reusableReview = (t: Task) =>
+        !!t.reviewPromptHash &&
+        t.review?.verdict === 'pass' &&
+        t.review.risk === 'low' &&
+        !t.review.remainingRisks.length &&
+        coversAll(t, t.review.results) &&
+        !t.automationNote.startsWith('Machine verification') &&
+        !t.automationNote.startsWith('Automatic verification unavailable')
       if (task.completionPolicy.mode === 'reviewed') {
-        const sessionId = await this.runtime.create(task.workspaceId)
-        if (this.closed) return this.task(id)
-        task = await this.board.beginReview(sessionId, id, task.version)
-        const prompt = reviewPrompt(task)
-        promptHash = digest(prompt)
-        await this.runtime.prompt(sessionId, prompt, crypto.randomUUID())
-        await this.runtime.idle(sessionId)
-        if (this.closed) return this.task(id)
-        task = this.task(id)
+        if (!reusableReview(task)) {
+          // Reuse an in-flight reviewer after reconnect; do not create overlapping reviews.
+          if (
+            task.reviewSessionId &&
+            this.runtime.running(task.reviewSessionId)
+          ) {
+            await this.runtime.idle(task.reviewSessionId)
+            if (this.closed) return this.task(id)
+            task = this.task(id)
+          }
+          if (!reusableReview(task)) {
+            const sessionId = await this.runtime.create(task.workspaceId)
+            if (this.closed) return this.task(id)
+            task = await this.board.beginReview(sessionId, id, task.version)
+            const prompt = reviewPrompt(task)
+            await runPhase(
+              this.board,
+              this.runtime,
+              task,
+              sessionId,
+              'review',
+              prompt,
+              () => this.closed,
+            )
+            if (this.closed) return this.task(id)
+            task = this.task(id)
+          }
+        }
+        promptHash = task.reviewPromptHash ?? digest(reviewPrompt(task))
         if (task.status !== 'in-review') return task
         if (
-          task.review?.verdict !== 'pass' ||
+          !task.review ||
+          task.review.verdict !== 'pass' ||
           task.review.risk !== 'low' ||
           task.review.remainingRisks.length ||
           !coversAll(task, task.review.results)
@@ -81,9 +108,12 @@ export class CompletionCoordinator {
           return this.board.note(
             id,
             task.version,
-            'Independent review did not pass every criterion without remaining risks. Inspect the review Session; human acceptance or a corrected execution is required.',
+            task.review ? 'review-failed' : 'review-report-missing',
           )
       }
+      // Independent evidence is useful for staged work, but cannot grant automatic completion.
+      if (!canAutoComplete(task))
+        return this.board.note(id, task.version, 'human-acceptance-required')
       const results = await checkFiles(
         task,
         this.workspacePath(task.workspaceId),

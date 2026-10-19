@@ -107,6 +107,11 @@ const server = http.createServer(async (req, res) => {
       return json(res, await payload())
     }
     if (url.pathname === '/fixtures') return json(res, fixtures)
+    if (url.pathname === '/permissions' && req.method === 'GET')
+      return json(res, {
+        ok: true,
+        value: await backend.permissions.loadPermissions(),
+      })
     if (req.method === 'POST') {
       let raw = ''
       for await (const chunk of req) {
@@ -114,6 +119,14 @@ const server = http.createServer(async (req, res) => {
         if (raw.length > 150000) throw Error('Request too large')
       }
       const body = JSON.parse(raw || '{}')
+      if (url.pathname === '/permissions')
+        return json(res, {
+          ok: true,
+          value: await backend.permissions.savePermissionDefault(
+            body.preset,
+            body.revision,
+          ),
+        })
       if (url.pathname === '/control') {
         if (body.scenario) await reset(body.scenario)
         if (body.action === 'recover') {
@@ -130,6 +143,9 @@ const server = http.createServer(async (req, res) => {
         if (body.action === 'script') {
           backend.scripts[body.id] = body.script
         }
+        if (body.action === 'interaction')
+          await backend.setInteraction(body.id, body.kind)
+        if (body.action === 'permissions') await backend.permissionControl(body)
         if (body.action === 'release') backend.release(body.id)
         if (body.action === 'claim')
           await backend.board.claim('session-alpha-builder', {
@@ -165,7 +181,14 @@ const server = http.createServer(async (req, res) => {
           )
         const name = url.pathname.split('/').pop()
         if (
-          !['create', 'update', 'dispatch', 'analyze', 'verify'].includes(name)
+          ![
+            'create',
+            'update',
+            'dispatch',
+            'analyze',
+            'verify',
+            'image',
+          ].includes(name)
         )
           return json(res, { ok: false, error: 'Unknown command' }, 404)
         if (fault === 'detail-error' && name === 'update')
@@ -175,7 +198,7 @@ const server = http.createServer(async (req, res) => {
             503,
           )
         const value = await backend.owner[name](body)
-        await publish()
+        if (name !== 'image') await publish()
         return json(res, { ok: true, value })
       }
     }

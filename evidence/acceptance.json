@@ -1,20 +1,33 @@
 {
-  "version": "1.0.0",
+  "version": "1.4.1",
   "repository": "https://github.com/persevere-dsh/perse-dashboard",
-  "domainTests": 12,
-  "processOwnershipTests": 4,
-  "runtime": "DSH 0.2.1-rc.2 / Cordis 4.0.5 / Node 24",
+  "domainTests": 37,
+  "processOwnershipTests": 6,
+  "runtime": "DSH 0.2.1-rc.2 / Cordis 4.0.5 / Node 24.21.0",
+  "sourceCommit": "118269a87d2bf5f55092d13b2b9df4d36ef9097f",
+  "sourceDirty": false,
+  "browser": "system Google Chrome 155.0.8059.82 (PERSEVERE_DSH_BROWSER=chrome; Playwright-managed Chromium was not installed on this host)",
   "lanes": {
+    "lab": {
+      "runId": "20261019-185223-f81c3d",
+      "status": "passed",
+      "synthetic": true,
+      "scenarios": 23,
+      "repeats": 2,
+      "assertionsPerRepeat": 28,
+      "secondRepeatPassed": true,
+      "cleanup": true
+    },
     "native": {
-      "runId": "20261018-163816-1b4c46",
-      "sourceCommit": "457f2c23bef0f8bfdec32bc18d3c3f11a74097f2",
+      "runId": "20261019-190014-3da978",
+      "sourceCommit": "118269a87d2bf5f55092d13b2b9df4d36ef9097f",
       "sourceDirty": false,
       "runtimeVersion": "0.2.1-rc.2",
       "status": "passed",
-      "packageSha256": "9b7fa699a323f4b0e640a38a933cc5bf533d162f6011b22e1e79cca2b0c20eb1",
+      "packageSha256": "7d43a4ba7952862ab28aa4bbc0819d7803113c882cd7dbbfdecaae89ec130b38",
       "artifactBinding": {
         "installedPackage": true,
-        "sha256": "0e5316d2ac8d38d5660674342a18410749f6d89a72463ecca6fc264993cd06ec"
+        "sha256": "e148a0a9e7e9d3a45b7bc484a109c8d74768592c3cc635b8328f84ac9c6c45b1"
       },
       "assertions": [
         {
@@ -23,6 +36,10 @@
         },
         {
           "check": "native slot loads without DOM injection",
+          "passed": true
+        },
+        {
+          "check": "board has no duplicate next-step task grid",
           "passed": true
         },
         {
@@ -50,6 +67,30 @@
           "passed": true
         },
         {
+          "check": "visible intake → native analysis → atomic claim → execution → separate reviewer → file checks → automatic completion",
+          "passed": true
+        },
+        {
+          "check": "watcher stays armed between issues and can be paused from the UI",
+          "passed": true
+        },
+        {
+          "check": "recorded image evidence is loaded through real owner Remote and previews within native DSH CSP",
+          "passed": true
+        },
+        {
+          "check": "real DSH reasoning-only stops receive one report reminder; task failure is isolated; later issue auto-completes and owner recovery works",
+          "passed": true
+        },
+        {
+          "check": "permission default is read from the real DSH catalog and Settings; reads do not change it",
+          "passed": true
+        },
+        {
+          "check": "actual DSH approval remains pending while the board warns; explicit isolated rejection clears it without granting a write or marking done",
+          "passed": true
+        },
+        {
           "check": "second client receives the authoritative task baseline",
           "passed": true
         },
@@ -78,20 +119,18 @@
           "passed": true
         }
       ],
-      "cleanup": true,
-      "ownedProcessGroupAbsent": true,
-      "transientCredentialsRemoved": true
+      "cleanup": true
     },
     "live": {
-      "runId": "20261018-163905-a2edbe",
-      "sourceCommit": "457f2c23bef0f8bfdec32bc18d3c3f11a74097f2",
+      "runId": "20261019-190044-43170a",
+      "sourceCommit": "118269a87d2bf5f55092d13b2b9df4d36ef9097f",
       "sourceDirty": false,
       "runtimeVersion": "0.2.1-rc.2",
       "status": "passed",
-      "packageSha256": "9b7fa699a323f4b0e640a38a933cc5bf533d162f6011b22e1e79cca2b0c20eb1",
+      "packageSha256": "7d43a4ba7952862ab28aa4bbc0819d7803113c882cd7dbbfdecaae89ec130b38",
       "artifactBinding": {
         "installedPackage": true,
-        "sha256": "0e5316d2ac8d38d5660674342a18410749f6d89a72463ecca6fc264993cd06ec"
+        "sha256": "e148a0a9e7e9d3a45b7bc484a109c8d74768592c3cc635b8328f84ac9c6c45b1"
       },
       "assertions": [
         {
@@ -100,6 +139,10 @@
         },
         {
           "check": "native slot loads without DOM injection",
+          "passed": true
+        },
+        {
+          "check": "board has no duplicate next-step task grid",
           "passed": true
         },
         {
@@ -123,6 +166,14 @@
           "passed": true
         },
         {
+          "check": "visible intake → native analysis → atomic claim → execution → separate reviewer → file checks → automatic completion",
+          "passed": true
+        },
+        {
+          "check": "watcher stays armed between issues and can be paused from the UI",
+          "passed": true
+        },
+        {
           "check": "second client receives the authoritative task baseline",
           "passed": true
         },
@@ -151,46 +202,45 @@
           "passed": true
         }
       ],
-      "cleanup": true,
-      "ownedProcessGroupAbsent": true,
-      "transientCredentialsRemoved": true
+      "cleanup": true
     }
   },
-  "manualBrowser": {
-    "surface": "Codex in-app browser",
-    "sourceRun": "20261018-163816-1b4c46",
-    "actions": [
-      "Open native sidebar dashboard",
-      "Inspect actual agent claim/report evidence",
-      "Check criterion",
-      "Explicitly accept and observe Done"
-    ],
-    "passed": true
-  },
-  "limitations": [
-    "One DSH Host per installation",
-    "Queue is opt-in, single-worker, at most 10 tasks per enable",
-    "Remote SSH deployment has not been exercised",
-    "Preview runtime compatibility pinned to 0.2.1-rc.2"
-  ],
   "liveArtifact": {
     "filename": "sim-result.txt",
     "bytes": 21,
     "sha256": "63fb4e5348f53f444d780cae8701ed4db98aef8b4eccf079818c683f9ba79600",
     "exactContent": "DSH_DASHBOARD_LIVE_OK",
     "provider": "deepseek-official",
-    "model": "deepseek-flash"
+    "model": "deepseek-flash",
+    "reasoningEffort": "high"
   },
-  "ci": {
-    "sourceCommit": "457f2c23bef0f8bfdec32bc18d3c3f11a74097f2",
-    "conclusion": "success",
-    "url": "https://github.com/persevere-dsh/perse-dashboard/actions/runs/39112228723"
+  "screenshots": {
+    "retainedInRun": [
+      "dashboard.png",
+      "mobile.png",
+      "dark.png",
+      "pending-approval-board.png",
+      "native-recovered-image-evidence.png",
+      "automatic-evidence.png",
+      "task-evidence.png",
+      "attention.png",
+      "permission-settings.png",
+      "workflow-recovery.png"
+    ],
+    "repositoryCopy": "evidence/dashboard.png"
   },
-  "cleanClone": {
-    "npmCi": true,
-    "typecheck": true,
-    "buildAndPackageGate": true,
-    "domainTests": 12,
-    "processOwnershipTests": 4
+  "limitations": [
+    "One DSH Host per installation",
+    "Queue is opt-in, single-worker, at most 10 tasks per enable",
+    "Remote SSH deployment has not been exercised",
+    "Preview runtime compatibility pinned to DSH 0.2.1-rc.2",
+    "Independent review is an additional model Session, not a formal verifier",
+    "Native/live journeys used the host Chrome channel because Playwright-managed Chromium is absent"
+  ],
+  "releaseArtifact": {
+    "filename": "perse-dashboard-1.4.1.tgz",
+    "sha256": "0e170a30bc10d32cc01b024e47fe6cd938cac16dd3e143a222db0a4500046e6f",
+    "entryCount": 67,
+    "note": "Packed after the lane runs from the same source tree; runtime code and generated client bundle are unchanged. Documentation and this acceptance record are newer than the isolated lane tarball (7d43a4ba)."
   }
 }

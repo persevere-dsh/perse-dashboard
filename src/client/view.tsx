@@ -1,6 +1,8 @@
 /** Pure components: only framework-provided hooks and injected commands. */
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { Dialog, DetailTabs } from './dialog.tsx'
+import { PermissionSettings, type PermissionControls } from './permissions.tsx'
+import { activeTaskSessions, attentionKey } from './attention.ts'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {
   PropsRuntime,
@@ -19,13 +21,16 @@ import type { createDashboardStore } from './store.ts'
 import type { Key } from './locales.ts'
 import { CompletionEditor } from './completion-editor.tsx'
 import { OptionGroup } from './option-group.tsx'
+import { completionBlocks, nextStep, taskNeedsAction } from './workflow.ts'
+import { EvidenceText, EvidenceImages } from './evidence.tsx'
 import { validSnapshot } from './validation.ts'
 import type {
   CompletionPolicy,
   TaskCommand,
   DashboardSnapshot,
 } from '../contract/types.ts'
-export interface Injected {
+export interface Injected extends PermissionControls {
+  image(r: { id: string; path: string }): Promise<string>
   create(r: CreateRequest): Promise<Task>
   update(r: UpdateRequest): Promise<Task>
   dispatch(r: DispatchRequest): Promise<DispatchState>
@@ -115,6 +120,35 @@ export function Dashboard(props: Props) {
         .toLowerCase()
         .includes(query.toLowerCase()),
   )
+  const attention = sessions.flatMap((session) => {
+    const key = attentionKey(agentState.get(session.id))
+    return key ? [{ session, key }] : []
+  })
+  const isRunning = (item: Task) =>
+    activeTaskSessions(item).some(
+      (id) =>
+        agentState.get(id as never)?.running ??
+        sessionState.byId[id as never]?.running,
+    ) || snapshot?.dispatch.activeTaskId === item.id
+  const queueFor = (item: Task) =>
+    !!snapshot?.dispatch.enabled &&
+    snapshot.dispatch.workspaceId === item.workspaceId
+  const actionable = tasks.filter((item) =>
+    taskNeedsAction(item, !!isRunning(item), queueFor(item)),
+  )
+  const attentionCount =
+    actionable.length +
+    attention.filter(
+      ({ session }) =>
+        !actionable.some((item) =>
+          activeTaskSessions(item).includes(session.id),
+        ),
+    ).length
+  const taskAttention = (item: Task) =>
+    activeTaskSessions(item).flatMap((id) => {
+      const key = attentionKey(agentState.get(id as never))
+      return key ? [{ id, key }] : []
+    })
   const task = snapshot?.tasks.find(
       (v) =>
         v.id === selected && (!workspaceId || v.workspaceId === workspaceId),
@@ -165,6 +199,10 @@ export function Dashboard(props: Props) {
     !!workspace && dispatch?.workspaceId === workspace.workspaceId
   const queueActive = !!dispatch?.enabled && ownsQueue
   const otherQueueActive = !!dispatch?.enabled && !ownsQueue
+  const queueAttention =
+    ownsQueue && dispatch?.activeSessionId
+      ? attentionKey(agentState.get(dispatch.activeSessionId as never))
+      : undefined
   const validBudget =
     /^\d+$/.test(budget) && Number(budget) >= 1 && Number(budget) <= 100
   useEffect(() => {
@@ -204,17 +242,26 @@ export function Dashboard(props: Props) {
     }
   }
   const phase = (item: Task): Key => {
+    const pending = taskAttention(item)[0]
+    if (pending) return pending.key
+    const currentPhases = activeTaskSessions(item)
     if (
       item.analysisSessionId &&
+      currentPhases.includes(item.analysisSessionId) &&
       agentState.get(item.analysisSessionId as never)?.running
     )
       return 'analyzing'
     if (
       item.reviewSessionId &&
+      currentPhases.includes(item.reviewSessionId) &&
       agentState.get(item.reviewSessionId as never)?.running
     )
       return 'reviewing'
-    if (item.sessionId && agentState.get(item.sessionId as never)?.running)
+    if (
+      item.sessionId &&
+      currentPhases.includes(item.sessionId) &&
+      agentState.get(item.sessionId as never)?.running
+    )
       return 'executing'
     return item.status
   }
@@ -263,10 +310,30 @@ export function Dashboard(props: Props) {
           </button>
         </div>
       </header>
+      {attention.length > 0 && (
+        <section
+          className="pd-attention"
+          role="alert"
+          aria-label={t('attention')}
+        >
+          <strong>
+            {t('attention')} · {attention.length}
+          </strong>
+          <p>{t('attentionHelp')}</p>
+          <div className="pd-actions">
+            {attention.map(({ session, key }) => (
+              <button key={session.id} onClick={() => openSession(session.id)}>
+                {t(key)} · {session.displayTitle} ↗
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       <section className="pd-stats" aria-label={t('overview')}>
         {[
           [t('total'), tasks.length, '▦'],
           [t('active'), running, '◉'],
+          [t('attention'), attentionCount, '!'],
           [
             t('review'),
             tasks.filter((item) => item.status === 'in-review').length,
@@ -281,7 +348,10 @@ export function Dashboard(props: Props) {
             '↗',
           ],
         ].map(([label, value, icon]) => (
-          <div className="pd-stat" key={label}>
+          <div
+            className={`pd-stat ${label === t('attention') && attentionCount ? 'is-attention' : ''}`}
+            key={label}
+          >
             <div>
               <span>{label}</span>
               <span className="pd-stat-icon" aria-hidden="true">
@@ -323,15 +393,28 @@ export function Dashboard(props: Props) {
           {error}
         </div>
       )}
-      {dispatch?.error && (
-        <div className="pd-banner" role="status">
-          {t('dispatchError')}: {dispatch.error}
-        </div>
-      )}
+      {dispatch?.error &&
+        (!workspaceId || dispatch.workspaceId === workspaceId) && (
+          <div className="pd-banner" role="status">
+            {t('dispatchError')}: {dispatch.error}
+            {dispatch.errorTaskId && (
+              <button onClick={() => setSelected(dispatch.errorTaskId!)}>
+                {t('failedQueueTask')}
+              </button>
+            )}
+          </div>
+        )}
       <div className="pd-toolbar">
         <div className="pd-segments" role="group" aria-label={t('view')}>
           {(['board', 'list', 'sessions'] as const).map((v) => (
-            <button key={v} aria-pressed={tab === v} onClick={() => setTab(v)}>
+            <button
+              key={v}
+              aria-pressed={tab === v}
+              onClick={() => {
+                setSelected(null)
+                setTab(v)
+              }}
+            >
               {t(
                 v === 'board'
                   ? 'board'
@@ -345,7 +428,10 @@ export function Dashboard(props: Props) {
         <select
           aria-label={t('all')}
           value={workspaceId}
-          onChange={(e) => setWorkspaceId(e.target.value)}
+          onChange={(e) => {
+            setSelected(null)
+            setWorkspaceId(e.target.value)
+          }}
         >
           <option value="">{t('all')}</option>
           {workspaces.map((w) => (
@@ -376,7 +462,7 @@ export function Dashboard(props: Props) {
       <section className="pd-automation" aria-label={t('automation')}>
         <div className="pd-automation-summary">
           <span
-            className={`pd-status-icon ${queueActive ? 'is-live' : ''}`}
+            className={`pd-status-icon ${queueAttention ? 'is-attention' : queueActive ? 'is-live' : ''}`}
             aria-hidden="true"
           >
             ↻
@@ -389,7 +475,7 @@ export function Dashboard(props: Props) {
                 : otherQueueActive
                   ? t('otherQueue')
                   : queueActive
-                    ? `${t('processing')} · ${dispatch?.processed}/${dispatch?.maxTasks}`
+                    ? `${t(queueAttention ?? (dispatch?.activeTaskId ? 'processing' : 'queueListening'))} · ${dispatch?.processed}/${dispatch?.maxTasks}`
                     : t('automationHelp')}
             </p>
           </div>
@@ -446,6 +532,11 @@ export function Dashboard(props: Props) {
           </div>
         )}
       </section>
+      <PermissionSettings
+        t={t}
+        loadPermissions={props.loadPermissions}
+        savePermissionDefault={props.savePermissionDefault}
+      />
       {tab === 'board' ? (
         <div className="pd-layout">
           <div className="pd-columns" aria-label={t('board')}>
@@ -470,9 +561,12 @@ export function Dashboard(props: Props) {
                     .filter((item) => item.status === status)
                     .map((item) => (
                       <button
-                        className="pd-card"
+                        className={`pd-card ${taskAttention(item).length ? 'is-attention' : ''}`}
                         key={item.id}
                         aria-pressed={selected === item.id}
+                        title={t(
+                          nextStep(item, !!isRunning(item), queueFor(item)),
+                        )}
                         onClick={() => setSelected(item.id)}
                       >
                         <span className="pd-card-meta">
@@ -492,7 +586,11 @@ export function Dashboard(props: Props) {
                           {item.description || t('noDescription')}
                         </span>
                         <span className="pd-card-tags">
-                          <span className="pd-badge">{t(phase(item))}</span>
+                          <span
+                            className={`pd-badge ${taskAttention(item).length ? 'is-attention' : ''}`}
+                          >
+                            {t(phase(item))}
+                          </span>
                           {item.needsManual && (
                             <span className="pd-badge">{t('manual')}</span>
                           )}
@@ -548,7 +646,10 @@ export function Dashboard(props: Props) {
                     <small className="pd-muted">{item.id.slice(0, 8)}</small>
                   </td>
                   <td>
-                    <span className="pd-badge" data-status={item.status}>
+                    <span
+                      className={`pd-badge ${taskAttention(item).length ? 'is-attention' : ''}`}
+                      data-status={item.status}
+                    >
                       {t(phase(item))}
                     </span>
                   </td>
@@ -586,13 +687,14 @@ export function Dashboard(props: Props) {
                         <div className="pd-muted">{s.cwd}</div>
                       </td>
                       <td>
-                        <span className="pd-badge">
+                        <span
+                          className={`pd-badge ${attentionKey(state) ? 'is-attention' : ''}`}
+                        >
                           {t(
-                            state?.pendingInteraction
-                              ? 'waiting'
-                              : (state?.running ?? s.running)
+                            attentionKey(state) ??
+                              ((state?.running ?? s.running)
                                 ? 'running'
-                                : 'idle',
+                                : 'idle'),
                           )}
                         </span>
                       </td>
@@ -725,6 +827,7 @@ export function Dashboard(props: Props) {
                       linkedRunning ||
                       !commandsAvailable ||
                       task.archived ||
+                      !task.criteria.length ||
                       !task.evidence ||
                       !task.checked.every(Boolean)
                     }
@@ -733,6 +836,26 @@ export function Dashboard(props: Props) {
                     {t('accept')}
                   </button>
                 )}
+                {[
+                  'blocked',
+                  'in-progress',
+                  'triage',
+                  'needs-info',
+                  'in-review',
+                ].includes(task.status) &&
+                  !linkedRunning &&
+                  !task.archived && (
+                    <button
+                      disabled={
+                        busy ||
+                        !commandsAvailable ||
+                        dispatch?.activeTaskId === task.id
+                      }
+                      onClick={() => mutation(task, { action: 'retry' })}
+                    >
+                      {t('recoverTask')}
+                    </button>
+                  )}
                 {task.status === 'done' && !task.archived && (
                   <button
                     disabled={busy || linkedRunning || !commandsAvailable}
@@ -763,6 +886,51 @@ export function Dashboard(props: Props) {
           }
         >
           {detailError}
+          {taskAttention(task).map(({ id, key }) => (
+            <div role="alert" className="pd-attention" key={id}>
+              <strong>{t(key)}</strong>
+              <p>{t('attentionHelp')}</p>
+              <button onClick={() => openSession(id)}>
+                {t('openPendingSession')} ↗
+              </button>
+            </div>
+          ))}
+          <section className="pd-next-detail" aria-label={t('nextSteps')}>
+            <h3>{t('nextSteps')}</h3>
+            <p>{t(nextStep(task, !!isRunning(task), queueFor(task)))}</p>
+            {task.status === 'in-review' && (
+              <>
+                <h4>{t('completionGates')}</h4>
+                {completionBlocks(task).length ? (
+                  <ul>
+                    {completionBlocks(task).map((key) => (
+                      <li key={key}>{t(key)}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>{t('autoEligible')}</p>
+                )}
+                <p>{t('acceptRemaining')}</p>
+              </>
+            )}
+            {task.status === 'blocked' && <EvidenceText text={task.evidence} />}
+            {task.automationNote && (
+              <p role="status">
+                {task.automationNote === 'phase-report-missing'
+                  ? t('phaseMissingNote')
+                  : task.automationNote === 'human-acceptance-required' ||
+                      task.automationNote.startsWith(
+                        'Automatic completion held:',
+                      )
+                    ? t('humanGateNote')
+                    : task.automationNote === 'review-failed'
+                      ? t('reviewFailedNote')
+                      : task.automationNote === 'review-report-missing'
+                        ? t('reviewMissingNote')
+                        : task.automationNote}
+              </p>
+            )}
+          </section>
           {task.completion && (
             <div className="pd-receipt">
               <span className="pd-status-icon is-live">✓</span>
@@ -813,6 +981,13 @@ export function Dashboard(props: Props) {
                         t('unavailable'))
                       : t('notStarted')}
                   </strong>
+                  {id &&
+                    activeTaskSessions(task).includes(id) &&
+                    attentionKey(agentState.get(id as never)) && (
+                      <span className="pd-badge is-attention">
+                        {t(attentionKey(agentState.get(id as never))!)}
+                      </span>
+                    )}
                   {id && (
                     <button onClick={() => openSession(id)}>
                       {t(
@@ -845,6 +1020,7 @@ export function Dashboard(props: Props) {
                 <label key={i} className="pd-check">
                   <input
                     type="checkbox"
+                    aria-label={criterion}
                     checked={task.checked[i]}
                     disabled={
                       busy ||
@@ -862,23 +1038,49 @@ export function Dashboard(props: Props) {
                       })
                     }
                   />
-                  {criterion}
+                  <span>
+                    {criterion}
+                    {task.review?.results
+                      .filter((r) => r.criterion === i)
+                      .map((r, n) => (
+                        <span className="pd-criterion-result" key={n}>
+                          <strong>
+                            {t('criterionReview')}: {r.passed ? '✓' : '✗'}
+                          </strong>
+                          <span className="pd-criterion-copy">
+                            {r.evidence}
+                          </span>
+                        </span>
+                      ))}
+                  </span>
                 </label>
               ))}
-              <Evidence
-                key={`evidence:${task.id}`}
-                task={task}
-                t={t}
-                busy={busy || linkedRunning || !commandsAvailable}
-                dirty={(value) =>
-                  setDirtyParts((old) =>
-                    old.evidence === value ? old : { ...old, evidence: value },
-                  )
-                }
-                save={(evidence, version) =>
-                  mutation({ ...task, version }, { action: 'edit', evidence })
-                }
-              />
+              {task.evidence && (
+                <section className="pd-section">
+                  <h3>{t('evidenceReport')}</h3>
+                  <EvidenceText text={task.evidence} />
+                  <EvidenceImages task={task} load={props.image} t={t} />
+                </section>
+              )}
+              <details>
+                <summary>{t('editEvidence')}</summary>
+                <Evidence
+                  key={`evidence:${task.id}`}
+                  task={task}
+                  t={t}
+                  busy={busy || linkedRunning || !commandsAvailable}
+                  dirty={(value) =>
+                    setDirtyParts((old) =>
+                      old.evidence === value
+                        ? old
+                        : { ...old, evidence: value },
+                    )
+                  }
+                  save={(evidence, version) =>
+                    mutation({ ...task, version }, { action: 'edit', evidence })
+                  }
+                />
+              </details>
             </section>
           </section>
           <section
@@ -893,7 +1095,26 @@ export function Dashboard(props: Props) {
                 <h3>{t('analysis')}</h3>
                 <p>{task.analysis.summary}</p>
                 <p>
-                  {task.analysis.risk} · {task.analysis.route}
+                  {t(
+                    (
+                      {
+                        low: 'riskLow',
+                        medium: 'riskMedium',
+                        high: 'riskHigh',
+                      } as const
+                    )[task.analysis.risk],
+                  )}{' '}
+                  ·{' '}
+                  {t(
+                    (
+                      {
+                        express: 'routeExpress',
+                        staged: 'routeStaged',
+                        'needs-info': 'routeNeedsInfo',
+                        human: 'routeHuman',
+                      } as const
+                    )[task.analysis.route],
+                  )}
                 </p>
                 <ol>
                   {task.analysis.plan.map((step, i) => (
@@ -958,7 +1179,9 @@ export function Dashboard(props: Props) {
                 ))}
               </details>
             )}
-            {['todo', 'triage', 'needs-info'].includes(task.status) &&
+            {['todo', 'triage', 'needs-info', 'blocked'].includes(
+              task.status,
+            ) &&
               !task.archived && (
                 <TaskEditor
                   key={`editor:${task.id}`}
@@ -1063,7 +1286,7 @@ export function Dashboard(props: Props) {
               .map((a) => (
                 <div className="pd-audit" key={a.seq}>
                   {a.action} ·{' '}
-                  {a.actor === 'human' ? t('brand') : a.actor.slice(0, 16)}
+                  {a.actor === 'human' ? t('owner') : a.actor.slice(0, 16)}
                   <br />
                   {new Date(a.time).toLocaleString()}
                 </div>
@@ -1294,11 +1517,16 @@ function CreateForm({
           requestId: crypto.randomUUID(),
           workspaceId: ws,
           title,
-          description,
-          criteria: criteria
-            .split('\n')
-            .map((s) => s.trim())
-            .filter(Boolean),
+          description:
+            intake && criteria.trim()
+              ? `${description}\n\nAcceptance expectations supplied by owner:\n${criteria}`.trim()
+              : description,
+          criteria: intake
+            ? []
+            : criteria
+                .split('\n')
+                .map((s) => s.trim())
+                .filter(Boolean),
           priority,
           assignee: assignee || null,
           intake,
@@ -1338,7 +1566,7 @@ function CreateForm({
         />
       </label>
       <label className="pd-field pd-span">
-        {t('criteria')}
+        {t(intake ? 'criteriaOptional' : 'criteria')}
         <textarea
           required={!intake}
           value={criteria}
@@ -1409,14 +1637,24 @@ function CreateForm({
 
 type EditableTask = Pick<
   Task,
-  'title' | 'description' | 'priority' | 'completionPolicy' | 'needsManual'
+  | 'title'
+  | 'description'
+  | 'criteria'
+  | 'priority'
+  | 'completionPolicy'
+  | 'needsManual'
 >
 const editable = (task: Task): EditableTask => ({
   title: task.title,
+  criteria: task.criteria,
   description: task.description,
   priority: task.priority,
-  completionPolicy: task.completionPolicy,
-  needsManual: task.needsManual,
+  completionPolicy: task.completionPolicy ?? {
+    mode: 'manual',
+    instructions: '',
+    checks: [],
+  },
+  needsManual: task.needsManual ?? false,
 })
 function TaskEditor({
   task,
@@ -1483,6 +1721,46 @@ function TaskEditor({
           onChange={(e) => change('description', e.target.value)}
         />
       </label>
+      <fieldset className="pd-criteria-editor">
+        <legend>{t('criteriaItems')}</legend>
+        <p>{t('criteriaGenerated')}</p>
+        {draft.criteria.map((criterion, i) => (
+          <div className="pd-criterion-input" key={i}>
+            <input
+              aria-label={`${t('criterionText')} ${i + 1}`}
+              value={criterion}
+              maxLength={300}
+              disabled={busy}
+              onChange={(e) =>
+                change(
+                  'criteria',
+                  draft.criteria.map((v, n) => (n === i ? e.target.value : v)),
+                )
+              }
+            />
+            <button
+              type="button"
+              disabled={busy}
+              aria-label={`${t('removeCriterion')} ${i + 1}`}
+              onClick={() =>
+                change(
+                  'criteria',
+                  draft.criteria.filter((_, n) => n !== i),
+                )
+              }
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          disabled={busy || draft.criteria.length >= 20}
+          onClick={() => change('criteria', [...draft.criteria, ''])}
+        >
+          {t('addCriterion')}
+        </button>
+      </fieldset>
       <label className="pd-field">
         {t('priority')}
         <select
@@ -1514,7 +1792,13 @@ function TaskEditor({
       />
       <button
         className="pd-primary"
-        disabled={busy || !draft.title.trim() || !dirty || stale}
+        disabled={
+          busy ||
+          !draft.title.trim() ||
+          draft.criteria.some((c) => !c.trim()) ||
+          !dirty ||
+          stale
+        }
         onClick={async () => {
           if (await save(draft, version)) setBaseline(draft)
         }}
