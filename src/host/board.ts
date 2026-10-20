@@ -4,14 +4,22 @@ import { z } from 'zod'
 import type {
   Board,
   Task,
-  CreateRequest,
-  UpdateRequest,
+  CreateCommand,
+  UpdateCommand,
   AgentRequest,
   AnalysisReport,
   ReviewReport,
   CompletionReceipt,
+  ImageInputLimits,
+  InputImage,
 } from '../contract/types.ts'
 import { reviewPrompt } from './prompts.ts'
+import { detectTaskLanguage } from '../contract/language.ts'
+import {
+  DEFAULT_IMAGE_LIMITS,
+  InputImageError,
+  validateInputImages,
+} from './images.ts'
 import {
   manualPolicy,
   completionPolicySchema,
@@ -28,6 +36,16 @@ export const imageSchema = z.object({
   caption: z.string().max(500),
   criterion: z.number().int().nonnegative().optional(),
 })
+export const inputImageSchema = z.strictObject({
+  attachmentId: z.string().min(1).max(200),
+  mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif']),
+  bytes: z.number().int().positive(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  name: z.string().min(1).max(200),
+  source: z.enum(['description', 'criteria']),
+})
+const inputImagesSchema = z.array(inputImageSchema).max(4).optional()
 const status = z.enum([
   'triage',
   'needs-info',
@@ -46,6 +64,8 @@ export const taskSchema = z.object({
   checked: z.array(z.boolean()),
   evidence: z.string(),
   images: z.array(imageSchema).max(12).default([]),
+  inputImages: z.array(inputImageSchema).max(4).default([]),
+  language: z.enum(['zh', 'en']).nullable().default(null),
   priority: z.number().int().min(0).max(2),
   assignee: z.string().nullable(),
   sessionId: z.string().nullable(),
@@ -104,6 +124,8 @@ export const createSchema = z.strictObject({
   intake: z.boolean().optional(),
   needsManual: z.boolean().optional(),
   completionPolicy: completionPolicySchema.optional(),
+  inputImages: inputImagesSchema,
+  language: z.enum(['zh', 'en']).optional(),
 })
 export const updateSchema = z.strictObject({
   requestId,
@@ -128,6 +150,7 @@ export const updateSchema = z.strictObject({
   evidence: z.string().max(20000).optional(),
   completionPolicy: completionPolicySchema.optional(),
   needsManual: z.boolean().optional(),
+  inputImages: inputImagesSchema,
 })
 export class BoardError extends Error {
   constructor(
@@ -150,6 +173,7 @@ export interface BoardEnvironment {
   workspaces(): WorkspaceRecord[]
   now(): number
   id(): string
+  imageLimits?(): ImageInputLimits
 }
 export class BoardController {
   private tail: Promise<unknown> = Promise.resolve()
@@ -177,6 +201,19 @@ export class BoardController {
     if (!ws)
       throw new BoardError('workspace-missing', 'Workspace is unavailable')
     return ws
+  }
+  private imageLimits(): ImageInputLimits {
+    return this.env.imageLimits?.() ?? DEFAULT_IMAGE_LIMITS
+  }
+  private checkImages(images: readonly InputImage[] | undefined) {
+    if (!images) return
+    try {
+      validateInputImages(images, this.imageLimits())
+    } catch (error) {
+      if (error instanceof InputImageError)
+        throw new BoardError(error.code, error.message)
+      throw error
+    }
   }
   private sessionWorkspace(sessionId: string) {
     const ws = this.env
@@ -252,7 +289,7 @@ export class BoardController {
       return structuredClone(task)
     })
   }
-  create(raw: CreateRequest) {
+  create(raw: CreateCommand) {
     const r = createSchema.parse(raw)
     return this.mutate(r, 'human', () => {
       if (!r.intake && !r.criteria.length)
@@ -262,6 +299,7 @@ export class BoardController {
         )
       this.workspace(r.workspaceId)
       this.checkAssignee(r.workspaceId, r.assignee)
+      this.checkImages(r.inputImages)
       const now = this.env.now()
       return {
         action: 'create',
@@ -276,6 +314,16 @@ export class BoardController {
           checked: r.criteria.map(() => false),
           evidence: '',
           images: [],
+          inputImages: structuredClone(r.inputImages ?? []),
+          // Persist a concrete language for new tasks even when an older client
+          // omits it; legacy stored tasks keep null until the next edit.
+          language:
+            r.language ??
+            detectTaskLanguage({
+              title: r.title,
+              description: r.description,
+              criteria: r.criteria,
+            }),
           sessionId: null,
           status: r.intake ? 'triage' : 'todo',
           version: 1,
@@ -296,7 +344,7 @@ export class BoardController {
       }
     })
   }
-  update(raw: UpdateRequest) {
+  update(raw: UpdateCommand) {
     const r = updateSchema.parse(raw)
     return this.mutate(r, 'human', (b) => {
       const old = b.tasks.find((t) => t.id === r.id)
@@ -321,12 +369,14 @@ export class BoardController {
           r.title !== undefined ||
           r.description !== undefined ||
           r.completionPolicy !== undefined ||
-          r.needsManual !== undefined)
+          r.needsManual !== undefined ||
+          r.inputImages !== undefined)
       )
         throw new BoardError(
           'frozen',
           'Return the task to the queue before changing its scope',
         )
+      this.checkImages(r.inputImages)
       const task = {
         ...old,
         version: old.version + 1,
@@ -343,13 +393,17 @@ export class BoardController {
         if (r.completionPolicy !== undefined)
           task.completionPolicy = r.completionPolicy
         if (r.needsManual !== undefined) task.needsManual = r.needsManual
-        if (
+        if (r.inputImages !== undefined)
+          task.inputImages = structuredClone(r.inputImages)
+        const scopeChanged =
           r.criteria !== undefined ||
           r.title !== undefined ||
           r.description !== undefined ||
           r.completionPolicy !== undefined ||
-          r.needsManual !== undefined
-        ) {
+          r.needsManual !== undefined ||
+          (r.inputImages !== undefined &&
+            JSON.stringify(r.inputImages) !== JSON.stringify(old.inputImages))
+        if (scopeChanged) {
           task.analysis = null
           task.analysisSessionId = null
           task.review = null

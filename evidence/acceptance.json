@@ -1,33 +1,41 @@
 {
-  "version": "1.4.1",
+  "version": "1.5.0",
   "repository": "https://github.com/persevere-dsh/perse-dashboard",
-  "domainTests": 37,
+  "domainTests": 48,
   "processOwnershipTests": 6,
   "runtime": "DSH 0.2.1-rc.2 / Cordis 4.0.5 / Node 24.21.0",
-  "sourceCommit": "118269a87d2bf5f55092d13b2b9df4d36ef9097f",
-  "sourceDirty": false,
+  "sourceCommit": "9196cfb5b30bd8ed6550d8a9a81c558a076bffcd",
+  "sourceDirty": true,
   "browser": "system Google Chrome 155.0.8059.82 (PERSEVERE_DSH_BROWSER=chrome; Playwright-managed Chromium was not installed on this host)",
   "lanes": {
     "lab": {
-      "runId": "20261019-185223-f81c3d",
       "status": "passed",
       "synthetic": true,
-      "scenarios": 23,
-      "repeats": 2,
-      "assertionsPerRepeat": 28,
-      "secondRepeatPassed": true,
-      "cleanup": true
+      "cleanup": true,
+      "scenarios": 24,
+      "repeats": 1,
+      "allScenariosPassed": true,
+      "inputImagesScenario": {
+        "scenario": "input-images",
+        "passed": true,
+        "assertions": [
+          "Create and edit accept pasted PNG/JPEG/WebP with source labels and byte sizes; saved previews survive reload; image task completes analysis, execution and review"
+        ]
+      },
+      "runId": "20261020-152241-770bde"
     },
     "native": {
-      "runId": "20261019-190014-3da978",
-      "sourceCommit": "118269a87d2bf5f55092d13b2b9df4d36ef9097f",
-      "sourceDirty": false,
-      "runtimeVersion": "0.2.1-rc.2",
+      "runId": "20261020-152013-de7588",
       "status": "passed",
-      "packageSha256": "7d43a4ba7952862ab28aa4bbc0819d7803113c882cd7dbbfdecaae89ec130b38",
+      "sourceCommit": "9196cfb5b30bd8ed6550d8a9a81c558a076bffcd",
+      "sourceDirty": true,
+      "runtimeVersion": "0.2.1-rc.2",
+      "packageSha256": "cedd17b8277d2c2225dae27a3ba7b8d7520cd2045e8b18cb3adccd8a59e13d09",
       "artifactBinding": {
         "installedPackage": true,
-        "sha256": "e148a0a9e7e9d3a45b7bc484a109c8d74768592c3cc635b8328f84ac9c6c45b1"
+        "clientPath": "/private/var/folders/9s/97_39tp131l2fhb8wf0vmdnw0000gn/T/perse-dashboard-20261020-152013-de7588-am745naq/home/profiles/web/node_modules/perse-dashboard/lib/client.js",
+        "expectedPath": "/private/var/folders/9s/97_39tp131l2fhb8wf0vmdnw0000gn/T/perse-dashboard-20261020-152013-de7588-am745naq/home/profiles/web/node_modules/perse-dashboard/lib/client.js",
+        "sha256": "afe436d91a7b82acb05814e94dcb1843733d96f0382c57c475b833b9c3223f54"
       },
       "assertions": [
         {
@@ -47,7 +55,19 @@
           "passed": true
         },
         {
+          "check": "primary button, stat icons and readable label use DSH business-blue (light, contrast 4.23:1)",
+          "passed": true
+        },
+        {
+          "check": "selected tab underline and audit node use DSH business-blue (light)",
+          "passed": true
+        },
+        {
           "check": "handoff opens an unsent native DSH draft",
+          "passed": true
+        },
+        {
+          "check": "keyboard focus ring uses DSH business-blue (light)",
           "passed": true
         },
         {
@@ -87,7 +107,47 @@
           "passed": true
         },
         {
+          "check": "attention alert, attention stat and automation attention icon use business-blue",
+          "passed": true
+        },
+        {
           "check": "actual DSH approval remains pending while the board warns; explicit isolated rejection clears it without granting a write or marking done",
+          "passed": true
+        },
+        {
+          "check": "create form accepts pasted and attached PNG/JPEG/WebP/GIF with source labels, byte sizes, thumbnails and remove controls",
+          "passed": true
+        },
+        {
+          "check": "unsupported, oversized, corrupt and over-count pastes fail visibly before submit and add no image",
+          "passed": true
+        },
+        {
+          "check": "created task persists image metadata only and restores Remote-loaded previews",
+          "passed": true
+        },
+        {
+          "check": "edit form accepts pasted images in the acceptance-criteria field",
+          "passed": true
+        },
+        {
+          "check": "edit form pastes, removes and saves image references additively",
+          "passed": true
+        },
+        {
+          "check": "reload restores persisted input-image previews through the owner Remote",
+          "passed": true
+        },
+        {
+          "check": "image task completes analysis → execution → independent review with automatic completion",
+          "passed": true
+        },
+        {
+          "check": "analysis, execution and review requests carry 3 image blocks whose SHA-256 equals the uploaded PNG/JPEG/WebP fixtures; the repair reminder carries none",
+          "passed": true
+        },
+        {
+          "check": "a text-only model route blocks image work with a visible capability message instead of dropping images",
           "passed": true
         },
         {
@@ -115,22 +175,41 @@
           "passed": true
         },
         {
+          "check": "primary button, stat icons and readable label use DSH business-blue (mobile light, contrast 4.23:1)",
+          "passed": true
+        },
+        {
+          "check": "primary button, stat icons and readable label use DSH business-blue (dark, contrast 8.12:1)",
+          "passed": true
+        },
+        {
+          "check": "keyboard focus ring uses DSH business-blue (dark)",
+          "passed": true
+        },
+        {
+          "check": "selected tab underline and audit node use DSH business-blue (Native DSH contract verification)",
+          "passed": true
+        },
+        {
           "check": "no browser runtime errors",
           "passed": true
         }
       ],
-      "cleanup": true
+      "cleanup": true,
+      "imageTrace": "evidence/native-image-trace-1.5.0.json"
     },
     "live": {
-      "runId": "20261019-190044-43170a",
-      "sourceCommit": "118269a87d2bf5f55092d13b2b9df4d36ef9097f",
-      "sourceDirty": false,
-      "runtimeVersion": "0.2.1-rc.2",
+      "runId": "20261020-152030-c60a9c",
       "status": "passed",
-      "packageSha256": "7d43a4ba7952862ab28aa4bbc0819d7803113c882cd7dbbfdecaae89ec130b38",
+      "sourceCommit": "9196cfb5b30bd8ed6550d8a9a81c558a076bffcd",
+      "sourceDirty": true,
+      "runtimeVersion": "0.2.1-rc.2",
+      "packageSha256": "cedd17b8277d2c2225dae27a3ba7b8d7520cd2045e8b18cb3adccd8a59e13d09",
       "artifactBinding": {
         "installedPackage": true,
-        "sha256": "e148a0a9e7e9d3a45b7bc484a109c8d74768592c3cc635b8328f84ac9c6c45b1"
+        "clientPath": "/private/var/folders/9s/97_39tp131l2fhb8wf0vmdnw0000gn/T/perse-dashboard-20261020-152030-c60a9c-q72b3mhl/home/profiles/web/node_modules/perse-dashboard/lib/client.js",
+        "expectedPath": "/private/var/folders/9s/97_39tp131l2fhb8wf0vmdnw0000gn/T/perse-dashboard-20261020-152030-c60a9c-q72b3mhl/home/profiles/web/node_modules/perse-dashboard/lib/client.js",
+        "sha256": "afe436d91a7b82acb05814e94dcb1843733d96f0382c57c475b833b9c3223f54"
       },
       "assertions": [
         {
@@ -150,7 +229,19 @@
           "passed": true
         },
         {
+          "check": "primary button, stat icons and readable label use DSH business-blue (light, contrast 4.23:1)",
+          "passed": true
+        },
+        {
+          "check": "selected tab underline and audit node use DSH business-blue (light)",
+          "passed": true
+        },
+        {
           "check": "handoff opens an unsent native DSH draft",
+          "passed": true
+        },
+        {
+          "check": "keyboard focus ring uses DSH business-blue (light)",
           "passed": true
         },
         {
@@ -174,6 +265,14 @@
           "passed": true
         },
         {
+          "check": "real image-capable model perceived the pasted fixture and wrote its exact color",
+          "passed": true
+        },
+        {
+          "check": "live image task records explicit owner acceptance after real perception",
+          "passed": true
+        },
+        {
           "check": "second client receives the authoritative task baseline",
           "passed": true
         },
@@ -198,12 +297,55 @@
           "passed": true
         },
         {
+          "check": "primary button, stat icons and readable label use DSH business-blue (mobile light, contrast 4.23:1)",
+          "passed": true
+        },
+        {
+          "check": "primary button, stat icons and readable label use DSH business-blue (dark, contrast 8.12:1)",
+          "passed": true
+        },
+        {
+          "check": "keyboard focus ring uses DSH business-blue (dark)",
+          "passed": true
+        },
+        {
+          "check": "selected tab underline and audit node use DSH business-blue (Live DSH isolated verification)",
+          "passed": true
+        },
+        {
           "check": "no browser runtime errors",
           "passed": true
         }
       ],
-      "cleanup": true
+      "cleanup": true,
+      "imagePerception": {
+        "task": "Live image perception",
+        "fixture": "sim/fixtures/input-images/fixture-description.png",
+        "requiredFile": "live-image.txt",
+        "exactContent": "RED",
+        "assertion": "real image-capable model perceived the pasted fixture and wrote its exact color"
+      }
     }
+  },
+  "installCheck": {
+    "disposableHome": "/tmp/perse-profile-check-oJQuTI",
+    "profile": "desktopcopy (disposable copy of the owner desktop profile)",
+    "profileSource": "~/.dsh/profiles/desktop",
+    "installCommand": "DSH_HOME=<disposable> dsh plugin --profile desktopcopy add <packed 1.5.0 tarball>",
+    "artifactSha256": "cedd17b8277d2c2225dae27a3ba7b8d7520cd2045e8b18cb3adccd8a59e13d09",
+    "installedVersion": "1.5.0",
+    "runtimeVersion": "0.2.1-rc.2",
+    "bootCommand": "DSH_HOME=<disposable> dsh --profile desktopcopy --host 127.0.0.1 --port 49667 --no-open",
+    "bootUrl": "http://127.0.0.1:49667",
+    "authenticatedUiStatus": 200,
+    "servedClientBytes": 724886,
+    "installedClientBytes": 724814,
+    "clientMatchesInstalledPrefix": true,
+    "servedSuffix": ";\n//# sourceMappingURL=??perse-dashboard/client.js.map&rev=0604bd677e6b\n",
+    "installedClientSha256": "afe436d91a7b82acb05814e94dcb1843733d96f0382c57c475b833b9c3223f54",
+    "liveDesktopProfileUpdated": false,
+    "liveUpdateRequirement": "Owner approval is required before updating the real desktop profile; not requested or claimed in this session.",
+    "checkedAt": "2026-10-20T07:22:52.594Z"
   },
   "liveArtifact": {
     "filename": "sim-result.txt",
@@ -223,11 +365,17 @@
       "native-recovered-image-evidence.png",
       "automatic-evidence.png",
       "task-evidence.png",
-      "attention.png",
-      "permission-settings.png",
-      "workflow-recovery.png"
+      "input-images-form.png",
+      "input-images-detail.png",
+      "input-images.png",
+      "live-image.png"
     ],
-    "repositoryCopy": "evidence/dashboard.png"
+    "repositoryCopies": [
+      "evidence/input-images-form.png",
+      "evidence/input-images-detail.png",
+      "evidence/input-images-text-only-guard.png",
+      "evidence/live-image-perception.png"
+    ]
   },
   "limitations": [
     "One DSH Host per installation",
@@ -235,12 +383,16 @@
     "Remote SSH deployment has not been exercised",
     "Preview runtime compatibility pinned to DSH 0.2.1-rc.2",
     "Independent review is an additional model Session, not a formal verifier",
-    "Native/live journeys used the host Chrome channel because Playwright-managed Chromium is absent"
+    "Native/live journeys used the host Chrome channel because Playwright-managed Chromium is absent",
+    "Input images are task-level with a description/criteria source label; per-criterion image binding was not implemented",
+    "The manual handoff draft remains text-only; automatic analysis, execution and review carry task images",
+    "DSH normalizes GIF bytes before storage, so fixture SHA-256 equality is asserted for the byte-stable PNG/JPEG/WebP inputs; GIF admission and preview are asserted separately",
+    "The real desktop profile was not modified. A disposable copy of the desktop profile installed the packed artifact and booted the same DSH build; updating the live profile still requires explicit owner approval."
   ],
   "releaseArtifact": {
-    "filename": "perse-dashboard-1.4.1.tgz",
-    "sha256": "0e170a30bc10d32cc01b024e47fe6cd938cac16dd3e143a222db0a4500046e6f",
-    "entryCount": 67,
-    "note": "Packed after the lane runs from the same source tree; runtime code and generated client bundle are unchanged. Documentation and this acceptance record are newer than the isolated lane tarball (7d43a4ba)."
+    "filename": "perse-dashboard-1.5.0.tgz",
+    "sha256": "cedd17b8277d2c2225dae27a3ba7b8d7520cd2045e8b18cb3adccd8a59e13d09",
+    "entryCount": 71,
+    "note": "Packed during the passing native/live lanes from the same source tree; packageSha256 equals the tarball retained in both run directories, the disposable install receipt and all lane artifact bindings."
   }
 }

@@ -16,9 +16,9 @@
 npm ci
 npm run check
 npm pack
-dsh plugin --profile web add ./perse-dashboard-1.4.1.tgz
+dsh plugin --profile web add ./perse-dashboard-1.6.0.tgz
 # 本机 Desktop 未将 dsh 加入 PATH 时：
-scripts/dsh plugin --profile desktop add ./perse-dashboard-1.4.1.tgz
+scripts/dsh plugin --profile desktop add ./perse-dashboard-1.6.0.tgz
 ```
 
 重启所选实例后，从原生侧栏打开“工作看板”。必须使用打包后的 tgz 安装，不使用目录链接。此仓库不会修改 DSH 应用文件。
@@ -27,7 +27,9 @@ scripts/dsh plugin --profile desktop add ./perse-dashboard-1.4.1.tgz
 
 ## 分配和自动认领
 
-创建任务时写清结果和验收标准，可指定工作区中的一个会话，也可放入工作区队列。点击“准备 DSH 草稿”只准备未发送的原生输入；发送后 agent 可通过 `dashboard_claim_next` 领取任务，通过 `dashboard_report` 提交版本和证据。认领由 Host 串行、原子地决定，避免两个会话重复领取。
+创建任务时写清结果和验收标准，可指定工作区中的一个会话，也可放入工作区队列。任务说明和验收标准均支持粘贴或附加受大小限制的 PNG/JPEG/WebP/GIF 图片；图片作为任务输入引用持久化，并按来源与顺序发送到分析、执行和复核，纯文本模型路由会明确阻止任务而不是静默丢弃图片。点击“准备 DSH 草稿”只准备未发送的原生输入；发送后 agent 可通过 `dashboard_claim_next` 领取任务，通过 `dashboard_report` 提交版本和证据。认领由 Host 串行、原子地决定，避免两个会话重复领取。
+
+任务语言与 DSH 界面保持一致：新任务按当前界面语言持久化 `zh`/`en`，旧任务按内容确定性推断；中文任务的分析、执行、复核、补报提醒和机器提示均显示中文，历史生成内容不会被静默翻译。
 
 “启动队列”会通过官方 Session Controller 派发任务。暂停只阻止后续派发；停止当前 Agent 请使用原生会话控制。认领不自动过期，失败任务需查看真实会话后手动退回队列。人工模式需逐项勾选标准并明确确认；自动模式由 Host 检查风险、路由、证据、规则和复核身份后决定完成。完成后证据被冻结，需重新打开任务才能修改。
 
@@ -46,7 +48,7 @@ npm run sim -- --lane live
 npm run sim -- --lane native --keep
 ```
 
-`lab` 复用正式 BoardController、Dispatcher 和 CompletionCoordinator，提供完整任务、会话、工作区数据与 23 个可选场景；覆盖故障、断线、重放、恢复及自动化分支。它只模拟 DSH 执行与传输，不发送外部模型请求；`--scenario offline` 可聚焦单场景。对照依据和边界见 [Hermex 审计](docs/hermex-parity.md)。
+`lab` 复用正式 BoardController、Dispatcher 和 CompletionCoordinator，提供完整任务、会话、工作区数据与 24 个可选场景；覆盖故障、断线、重放、恢复及自动化分支。它只模拟 DSH 执行与传输，不发送外部模型请求；`--scenario offline` 可聚焦单场景。对照依据和边界见 [Hermex 审计](docs/hermex-parity.md)。
 
 `native` 运行真实 DSH Host、原生页面、Gateway、Agent loop、工具和存储，仅模型使用确定性适配器，不发送外部模型请求。`live` 临时复制凭据到隔离目录，以真实模型写入并读回测试文件，清理时删除凭据副本。设置 `PERSEVERE_DSH_CREDENTIALS` 可指定其他凭据文件。结果、截图和失败日志保存在 `.build/sim/<run-id>/`，以 `summary.json` 为入口。
 

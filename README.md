@@ -17,8 +17,10 @@ A native DeepSeek Harness dashboard for assigning work, atomically claiming task
 - Analyze dashboard issues in a dedicated native Session, with express/staged/needs-info/human routing.
 - Watch newly created issues with an activation budget (1–100), automatic claiming and execution.
 - Choose owner acceptance, exact file checks, or independent native review as the completion policy. Low-risk express tasks can finish automatically; staged/manual-marked tasks retain owner acceptance.
+- Paste or attach bounded PNG/JPEG/WebP/GIF images into a task's description and acceptance-criteria fields. Images persist as task input references and are sent to analysis, execution and review; text-only model routes block instead of dropping them.
 - Configure completion instructions and per-criterion file checks from the task form. See [completion rules](docs/automation.md).
 - Archive, restore and reopen tasks; accepted evidence is frozen until reopening.
+- Keep task language consistent with the DSH UI: new tasks persist `zh`/`en`, legacy tasks infer deterministically, and Chinese tasks get Chinese analysis, execution, review, reminders and machine-note copy. Historical generated text is never silently translated.
 
 No CDP, DOM rewriting, iframe injection, replacement Agent runtime or separate dashboard HTTP service is involved. The native panel follows DSH locale and theme.
 
@@ -31,9 +33,9 @@ npm ci
 npm run check
 npm pack
 # Standard CLI:
-dsh plugin --profile web add ./perse-dashboard-1.4.1.tgz
+dsh plugin --profile web add ./perse-dashboard-1.6.0.tgz
 # This Mac's installed DSH Desktop CLI, if dsh is not on PATH:
-scripts/dsh plugin --profile desktop add ./perse-dashboard-1.4.1.tgz
+scripts/dsh plugin --profile desktop add ./perse-dashboard-1.6.0.tgz
 ```
 
 Restart the selected DSH instance after installing. Open **Dashboard** from its native sidebar. Installation is always tarball based; do not use `npm link` or a directory dependency. `scripts/dsh` only forwards to the unmodified CLI; it does not patch the application.
@@ -69,7 +71,7 @@ npm run sim -- --lane live
 npm run sim -- --lane native --keep
 ```
 
-- **lab** provides 23 selectable scenarios with complete task/session/workspace data and a stateful backend built from the production BoardController, Dispatcher and CompletionCoordinator. It scripts only DSH execution and transport faults; no external model or installed DSH is required. Focus one case with `--scenario offline`; repeat with `--repeat 2`. Each case needs behavioral assertions.
+- **lab** provides 24 selectable scenarios with complete task/session/workspace data and a stateful backend built from the production BoardController, Dispatcher and CompletionCoordinator. It scripts only DSH execution and transport faults; no external model or installed DSH is required. Focus one case with `--scenario offline`; repeat with `--repeat 2`. Each case needs behavioral assertions.
 - **native** uses the actual installed DSH Host, native browser UI, Gateway, Session Controller, Agent loop, tools and storage. Only the model adapter is deterministic; no external model is called.
 - **live** copies the configured credential file into the private disposable home, uses the real default provider/model, asks it to write and read an exact file inside the disposable workspace, and removes the copied credential on cleanup. Credentials never enter the package or result report. Set `PERSEVERE_DSH_CREDENTIALS` for another credential file.
 - `--keep` retains the **test instance** after the browser checks for visible inspection; Ctrl-C cleans up only that run's processes.

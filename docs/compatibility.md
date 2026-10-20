@@ -24,6 +24,12 @@ The official design is the authority:
 - https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/storage/storage-domain
 - https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/core/agent
 
+## Task input images
+
+Task input images use the DSH attachment capability (`ctx.attachments`) when the Host composition mounts it. That capability is optional at runtime: without it the dashboard still loads text-only tasks, reports `capabilities.imageInput: false`, and refuses image drafts with a visible error. Image admission, normalization, stored dimensions and retention are owned by DSH; the plugin stores only opaque attachment references and never copies bytes into the Storage Domain. DSH keeps stored attachments indefinitely and offers no deletion API, so removing an image from a task removes the reference, not the durable object.
+
+The plugin asks the selected Session route whether it declares the `image` input modality. A route that explicitly declares text-only, or whose capability cannot be established, blocks that image-bearing task with a visible message; it does not rely on the LLM layer's text placeholder projection. Image-capable routes include the shipped DeepSeek flash route and real-model verification must use one. Tarballs are installed per profile; older plugin builds ignore the additive `inputImages` field, so an older plugin cannot display or send the images even though the newer Host stored their references. Back up the profile before downgrading.
+
 Borrowed ideas, with original implementation here:
 
 - [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard): issue assignment, Kanban workflow, session handoff and explicit user acceptance.

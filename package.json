@@ -1,6 +1,6 @@
 {
   "name": "perse-dashboard",
-  "version": "1.4.1",
+  "version": "1.6.0",
   "description": "Native task and session dashboard for Persevere with DSH",
   "type": "module",
   "license": "MIT",
@@ -85,13 +85,15 @@
     "@deepseek-ai/cordis": "~4.0.5",
     "@deepseek-ai/dsh-storage-domain": "0.2.1-rc.2",
     "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.2"
+    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-attachment": "0.2.1-rc.2"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-api-remotes": "0.2.1-rc.2",
     "@deepseek-ai/dsh-api-session-controller": "^0.2.1-rc.2",
     "@deepseek-ai/dsh-api-settings-controller": "0.2.1-rc.2",
     "@deepseek-ai/dsh-api-workspace-controller": "^0.2.1-rc.2",
+    "@deepseek-ai/dsh-attachment": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-locale": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-resources": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-store": "0.2.1-rc.2",
@@ -115,5 +117,10 @@
     "react-dom": "^18.3.1",
     "tsdown": "^0.22.2",
     "typescript": "6.0.3"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-attachment": {
+      "optional": true
+    }
   }
 }

@@ -214,6 +214,16 @@
       "seed": "empty"
     },
     {
+      "id": "language",
+      "description": "English and Chinese intake expectations plus persisted task language",
+      "seed": "empty",
+      "assertions": [
+        "English UI appends the English owner-expectation marker and persists en",
+        "Chinese UI appends the Chinese owner-expectation marker and persists zh",
+        "Switching back to English leaves the interface fully English"
+      ]
+    },
+    {
       "id": "filtered-empty",
       "description": "A valid board with no matching filter",
       "seed": "dense"
@@ -307,6 +317,15 @@
       "id": "permission-settings",
       "description": "Official default settings model, explicit confirmation, optimistic conflict, read-only/unavailable and durable recovery",
       "seed": "empty"
+    },
+    {
+      "id": "input-images",
+      "seed": "empty",
+      "assertions": [
+        "create and edit accept pasted PNG/JPEG/WebP images with source labels and byte sizes",
+        "saved input-image previews survive reload",
+        "an image task completes analysis, execution and independent review"
+      ]
     },
     {
       "id": "workflow-recovery",

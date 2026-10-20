@@ -126,10 +126,12 @@ function App() {
     [],
   )
   const image = useCallback(command('image'), [])
+  const inputImage = useCallback(command('inputImage'), [])
   const props: any = {
     loadPermissions,
     savePermissionDefault,
     t: (key: keyof typeof en) => dictionary[key],
+    language: () => (locale === 'zh' ? 'zh' : 'en'),
     useResource: () => ({ status, value: data?.snapshot }),
     useSessions: (select: any) =>
       select({
@@ -159,6 +161,7 @@ function App() {
       ]),
     ),
     image,
+    inputImage,
     create: command('create'),
     update: command('update'),
     dispatch: command('dispatch'),

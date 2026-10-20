@@ -1,0 +1,77 @@
+{
+  "checkedAt": "2026-10-20T08:37:21.339Z",
+  "ownerRequest": "用户明确要求更新真实 DSH profile",
+  "profile": "/Users/lxl/.dsh/profiles/desktop",
+  "backupPath": "/Users/lxl/.dsh/profiles/.desktop-backup-20261020-163454",
+  "artifact": {
+    "path": "/Users/lxl/Documents/anything/perse-dashboard/perse-dashboard-1.6.0.tgz",
+    "sha256": "6d2f46b718ce9ddefa9493a8434d899a6b3384345889758804dedc3c2dffcdec",
+    "version": "1.6.0"
+  },
+  "install": {
+    "application": "applied",
+    "stage": "enable",
+    "enabled": true,
+    "source": "file:/Users/lxl/Documents/anything/perse-dashboard/perse-dashboard-1.6.0.tgz"
+  },
+  "bundle": {
+    "version": "1.6.0",
+    "availability": "profile"
+  },
+  "host": {
+    "url": "http://127.0.0.1:59975",
+    "runtime": "0.2.1-rc.2",
+    "imageInput": true,
+    "imageLimits": {
+      "maxImages": 4,
+      "maxImageBytes": 20971520,
+      "maxImagePixels": 64000000,
+      "maxImageDimension": 8192,
+      "mediaTypes": [
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif"
+      ]
+    }
+  },
+  "client": {
+    "installedSha256": "c62c2fe2ae86dc12ad6ca6ef067bdeac451f72fa463176794c7293e03fc0ed27",
+    "servedMatchesInstalledPrefix": true,
+    "servedBytes": 732723,
+    "installedBytes": 732651
+  },
+  "liveUiRecheck": {
+    "base": "http://127.0.0.1:59975",
+    "beforeTasks": 5,
+    "afterTasks": 5,
+    "createdTask": false,
+    "pasted": [
+      {
+        "file": "fixture-description.png",
+        "bytes": 87,
+        "source": "任务说明"
+      },
+      {
+        "file": "fixture-criteria.jpg",
+        "bytes": 650,
+        "source": "验收标准"
+      }
+    ],
+    "thumbnailWidths": [
+      12,
+      12
+    ],
+    "removeWorked": true,
+    "cancelled": true,
+    "pageErrors": []
+  },
+  "screenshots": [
+    "/Users/lxl/Documents/anything/perse-dashboard/.build/live-update-20261020-163454/live-image-form-1.6.0.png"
+  ],
+  "notes": [
+    "Profile updated through the running plugin manager with HMR; application=applied.",
+    "The stable dependency now points at the repository tarball.",
+    "No test task was created; the live board task count stayed the same."
+  ]
+}

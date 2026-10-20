@@ -1,0 +1,365 @@
+{
+  "version": "1.6.0",
+  "feature": "task language consistency",
+  "domainTests": 60,
+  "runtime": "DSH 0.2.1-rc.2 / Cordis 4.0.5 / Node 24.21.0",
+  "browser": "system Google Chrome 155 (PERSEVERE_DSH_BROWSER=chrome)",
+  "packageSha256": "6d2f46b718ce9ddefa9493a8434d899a6b3384345889758804dedc3c2dffcdec",
+  "languageContract": {
+    "priority": [
+      "persisted Task.language",
+      "deterministic Han/Latin inference of title/description (criteria only when inconclusive)",
+      "en for empty content"
+    ],
+    "machineTokensPreserved": [
+      "dashboard_triage",
+      "dashboard_report",
+      "dashboard_review",
+      "TASK_DATA=",
+      "EXECUTOR_EVIDENCE=",
+      "REPORT_REMINDER:",
+      "PERSE_PHASE="
+    ]
+  },
+  "legacyBoard": {
+    "source": "read-only owner DSH storage",
+    "taskCount": 5,
+    "tasks": [
+      {
+        "id": "0289eab0-f685-494d-9196-3b651e3c722b",
+        "version": 14,
+        "status": "done",
+        "storedLanguage": null,
+        "resolvedLanguage": "zh",
+        "localizedMarker": true,
+        "englishMarkerRemaining": false,
+        "analysisPromptChinese": true,
+        "executionPromptChinese": true,
+        "reviewPromptChinese": true,
+        "criteriaUnchanged": true
+      },
+      {
+        "id": "60c2d41e-2da8-4f4d-a020-c069f3c33c07",
+        "version": 19,
+        "status": "done",
+        "storedLanguage": null,
+        "resolvedLanguage": "zh",
+        "localizedMarker": true,
+        "englishMarkerRemaining": false,
+        "analysisPromptChinese": true,
+        "executionPromptChinese": true,
+        "reviewPromptChinese": true,
+        "criteriaUnchanged": true
+      },
+      {
+        "id": "c1443abe-ff80-46f1-bc2b-2db61584f554",
+        "version": 3,
+        "status": "needs-info",
+        "storedLanguage": null,
+        "resolvedLanguage": "zh",
+        "localizedMarker": false,
+        "englishMarkerRemaining": false,
+        "analysisPromptChinese": true,
+        "executionPromptChinese": true,
+        "reviewPromptChinese": true,
+        "criteriaUnchanged": true
+      },
+      {
+        "id": "98be9a78-e25b-460e-a25b-be90ae6a6a25",
+        "version": 3,
+        "status": "needs-info",
+        "storedLanguage": null,
+        "resolvedLanguage": "zh",
+        "localizedMarker": false,
+        "englishMarkerRemaining": false,
+        "analysisPromptChinese": true,
+        "executionPromptChinese": true,
+        "reviewPromptChinese": true,
+        "criteriaUnchanged": true
+      },
+      {
+        "id": "56d99b8d-279b-45d8-a673-dcb47bc1b7c2",
+        "version": 5,
+        "status": "in-progress",
+        "storedLanguage": null,
+        "resolvedLanguage": "zh",
+        "localizedMarker": false,
+        "englishMarkerRemaining": false,
+        "analysisPromptChinese": true,
+        "executionPromptChinese": true,
+        "reviewPromptChinese": true,
+        "criteriaUnchanged": true
+      }
+    ],
+    "allResolvedZh": true,
+    "allMarkersLocalized": true,
+    "allPromptsChinese": true,
+    "criteriaVersionsUnchanged": true
+  },
+  "lanes": {
+    "lab": {
+      "runId": "20261020-153855-46a7aa",
+      "status": "passed",
+      "cleanup": true,
+      "synthetic": true,
+      "scenarios": 25,
+      "languageScenario": "English intake marker persists en; Chinese UI persists zh and renders 所有者补充的验收期望：; switching back restores English",
+      "machineNoteScenario": "human-acceptance-required renders as Chinese in task detail without changing the stored token"
+    },
+    "native": {
+      "runId": "20261020-153827-93770b",
+      "status": "passed",
+      "cleanup": true,
+      "packageSha256": "6d2f46b718ce9ddefa9493a8434d899a6b3384345889758804dedc3c2dffcdec",
+      "assertions": [
+        {
+          "check": "DSH resolves the installed tarball artifact outside the checkout",
+          "passed": true
+        },
+        {
+          "check": "native slot loads without DOM injection",
+          "passed": true
+        },
+        {
+          "check": "board has no duplicate next-step task grid",
+          "passed": true
+        },
+        {
+          "check": "task creation is durable, persists the active zh language and never executes a model",
+          "passed": true
+        },
+        {
+          "check": "primary button, stat icons and readable label use DSH business-blue (light, contrast 4.23:1)",
+          "passed": true
+        },
+        {
+          "check": "selected tab underline and audit node use DSH business-blue (light)",
+          "passed": true
+        },
+        {
+          "check": "handoff opens an unsent native DSH draft in the active Chinese locale",
+          "passed": true
+        },
+        {
+          "check": "keyboard focus ring uses DSH business-blue (light)",
+          "passed": true
+        },
+        {
+          "check": "native queue atomically claims and reports evidence without auto-accepting; zh tasks use the Chinese phase prompt",
+          "passed": true
+        },
+        {
+          "check": "deterministic provider invokes the real workspace shell tool",
+          "passed": true
+        },
+        {
+          "check": "only explicit human acceptance completes the task",
+          "passed": true
+        },
+        {
+          "check": "agent autonomously claims through the real DSH tool then reports",
+          "passed": true
+        },
+        {
+          "check": "zh task analysis summary/plan/questions, execution evidence and review results/remainingRisks are Chinese with Chinese phase prompts",
+          "passed": true
+        },
+        {
+          "check": "visible intake → native analysis → atomic claim → execution → separate reviewer → file checks → automatic completion",
+          "passed": true
+        },
+        {
+          "check": "watcher stays armed between issues and can be paused from the UI",
+          "passed": true
+        },
+        {
+          "check": "an English task without a persisted language is inferred as en and keeps the English phase prompt",
+          "passed": true
+        },
+        {
+          "check": "recorded image evidence is loaded through real owner Remote and previews within native DSH CSP",
+          "passed": true
+        },
+        {
+          "check": "real DSH reasoning-only stops receive one report reminder; task failure is isolated; later issue auto-completes and owner recovery works",
+          "passed": true
+        },
+        {
+          "check": "permission default is read from the real DSH catalog and Settings; reads do not change it",
+          "passed": true
+        },
+        {
+          "check": "attention alert, attention stat and automation attention icon use business-blue",
+          "passed": true
+        },
+        {
+          "check": "actual DSH approval remains pending while the board warns; explicit isolated rejection clears it without granting a write or marking done",
+          "passed": true
+        },
+        {
+          "check": "create form accepts pasted and attached PNG/JPEG/WebP/GIF with source labels, byte sizes, thumbnails and remove controls",
+          "passed": true
+        },
+        {
+          "check": "unsupported, oversized, corrupt and over-count pastes fail visibly before submit and add no image",
+          "passed": true
+        },
+        {
+          "check": "created task persists image metadata only and restores Remote-loaded previews",
+          "passed": true
+        },
+        {
+          "check": "edit form accepts pasted images in the acceptance-criteria field",
+          "passed": true
+        },
+        {
+          "check": "edit form pastes, removes and saves image references additively",
+          "passed": true
+        },
+        {
+          "check": "reload restores persisted input-image previews through the owner Remote",
+          "passed": true
+        },
+        {
+          "check": "image task completes analysis → execution → independent review with automatic completion",
+          "passed": true
+        },
+        {
+          "check": "analysis, execution and review requests carry 3 image blocks whose SHA-256 equals the uploaded PNG/JPEG/WebP fixtures; the zh repair reminder body is Chinese and carries no images",
+          "passed": true
+        },
+        {
+          "check": "a text-only model route blocks image work with a visible capability message instead of dropping images",
+          "passed": true
+        },
+        {
+          "check": "second client receives the authoritative task baseline",
+          "passed": true
+        },
+        {
+          "check": "task changes stream to another client",
+          "passed": true
+        },
+        {
+          "check": "archive has a visible restore path",
+          "passed": true
+        },
+        {
+          "check": "stale writes fail without changing durable state",
+          "passed": true
+        },
+        {
+          "check": "reload rebuilds state from the Host",
+          "passed": true
+        },
+        {
+          "check": "linked task opens the real native conversation",
+          "passed": true
+        },
+        {
+          "check": "primary button, stat icons and readable label use DSH business-blue (mobile light, contrast 4.23:1)",
+          "passed": true
+        },
+        {
+          "check": "primary button, stat icons and readable label use DSH business-blue (dark, contrast 8.12:1)",
+          "passed": true
+        },
+        {
+          "check": "keyboard focus ring uses DSH business-blue (dark)",
+          "passed": true
+        },
+        {
+          "check": "selected tab underline and audit node use DSH business-blue (Native DSH contract verification)",
+          "passed": true
+        },
+        {
+          "check": "no browser runtime errors",
+          "passed": true
+        }
+      ],
+      "languageEvidence": {
+        "taskId": "890378e2-acb6-4349-882a-e00beab04edf",
+        "language": "zh",
+        "title": "Automatic native intake and independent review",
+        "analysis": {
+          "summary": "通过真实 DSH 工具生成的确定性分析",
+          "plan": [
+            "生成隔离产物",
+            "读回结果",
+            "提交证据"
+          ],
+          "risk": "low",
+          "route": "express",
+          "questions": []
+        },
+        "evidence": "SIM：已通过真实 DSH 工具执行验证；使用确定性模型，无外部推理。",
+        "review": {
+          "verdict": "pass",
+          "risk": "low",
+          "results": [
+            {
+              "criterion": 0,
+              "passed": true,
+              "evidence": "原生 shell 实际读回：[{\"type\":\"text\",\"text\":\"DSH_AUTO_NATIVE_OK\"}]"
+            }
+          ],
+          "remainingRisks": [],
+          "evidence": "独立原生 DSH 会话使用真实 bash 工具读取了工作区产物。"
+        }
+      }
+    },
+    "live": {
+      "runId": "20261020-153508-42705d",
+      "status": "passed",
+      "cleanup": true,
+      "packageSha256": "6d2f46b718ce9ddefa9493a8434d899a6b3384345889758804dedc3c2dffcdec",
+      "model": "deepseek-official/deepseek-flash",
+      "assertion": "live zh task analysis summary/plan, execution evidence and review results/remainingRisks are Chinese",
+      "languageEvidence": {
+        "taskId": "3da37866-4ee1-434b-80e4-dd96b1622684",
+        "language": "zh",
+        "title": "Automatic native intake and independent review",
+        "analysis": {
+          "summary": "议题要求在工作区根目录创建 auto-result.txt，内容严格为 DSH_AUTO_LIVE_OK 的 16 个 ASCII 字节，无 BOM、无尾随换行或空白，并由独立复核者用原生工具逐字节比对，且不得改动既有文件。实测工作区仅含 sim-result.txt（21 字节，内容 DSH_DASHBOARD_LIVE_OK）与空的 deepseek-harness/default-workspace 目录，auto-result.txt 尚不存在。需求与边界清晰、仅涉及一次性工作区内的单个新文件，无部署、发布、凭据或破坏性操作，可按低风险 Express 执行。",
+          "plan": [
+            "基线确认：在工作区记录现状与已有文件指纹（ls -la、shasum -a 256 sim-result.txt），确认 auto-result.txt 不存在，避免覆盖或误改。",
+            "精确写入：仅在工作区根目录执行 printf 'DSH_AUTO_LIVE_OK' > auto-result.tmp && mv auto-result.tmp auto-result.txt；printf 不追加换行，禁止使用 echo 或带换行的重定向，写入前再次确认目标文件不存在。",
+            "字节自检：执行 wc -c < auto-result.txt 应为 16；xxd auto-result.txt 应显示 4453 485f 4155 544f 5f4c 4956 455f 4f4b，首字节为 0x44 而非 0xEF（排除 BOM），末字节为 0x4b（无 0x0a、0x20 等尾随字节）。",
+            "独立复核：由独立复核会话用原生工作区工具读取 auto-result.txt，并用 xxd/od 逐字节与验收标准 DSH_AUTO_LIVE_OK 比对；核对失败或检查不可执行时按 completionPolicy 的 text-equals 检查判为不通过，不得以推理代替。",
+            "回归与留痕：复核后再次校验 sim-result.txt 的 sha256 与工作区目录条目未变（shasum -a 256、ls -la），确认无临时文件残留；将上述命令输出作为验证证据提交，全程不进行部署、发布或工作区外操作。"
+          ],
+          "risk": "low",
+          "route": "express",
+          "questions": []
+        },
+        "evidence": "## 实施结果\n\n在工作区根目录新建 `auto-result.txt`（仅此一个新增文件），写入命令为 `printf 'DSH_AUTO_LIVE_OK' > auto-result.tmp && mv auto-result.tmp auto-result.txt`（printf 不追加换行，未使用 echo）。\n\n## 逐项验证\n\n### 验收标准 0：内容恰好 16 ASCII 字节、无 BOM、无尾随空白 —— 通过\n- `wc -c < auto-result.txt` → `16`\n- `stat -f '%z bytes'` → `16 bytes`\n- `xxd auto-result.txt` → `00000000: 4453 485f 4155 544f 5f4c 4956 455f 4f4b  DSH_AUTO_LIVE_OK`\n- `od -An -tx1 -v auto-result.txt` → `44 53 48 5f 41 55 54 4f 5f 4c 49 56 45 5f 4f 4b`\n- 首 3 字节 `xxd -l 3` → `4453 48`（首字节 0x44，排除 EF BB BF BOM）\n- 末字节 `tail -c 1 | xxd` → `4b`（无 0x0a / 0x20 / 0x00）\n- `printf 'DSH_AUTO_LIVE_OK' | cmp - auto-result.txt` → 退出码 0，`CMP_IDENTICAL`\n- sha256：文件与期望值均为 `93d7ff1ed3e2d9fddf2dbf5de8a702fcd483a1b7dece3ceab4c6c3f345326298`\n- 补充：completionPolicy 的 text-equals 检查目标路径 `auto-result.txt` 内容与期望值 `DSH_AUTO_LIVE_OK` 一致。\n\n### 验收标准 1：独立复核者用原生工具逐字节比对 —— 通过\n由独立子会话（subagent `3f8957c5-cb01-4e87-a854-da085e712353`，只读复核，未写入工作区）执行原生检查，结果为 PASS：\n- `read` 工具读取文件，返回单行 `DSH_AUTO_LIVE_OK`，起始无 U+FEFF BOM 字符\n- `wc -c` → 16；`xxd` → `4453 485f … 5f4f 4b`；`xxd -p` → `4453485f4155544f5f4c4956455f4f4b`\n- `head -c 1 | xxd -p` → `44`；`tail -c 1 | xxd -p` → `4b`\n- `cmp auto-result.txt <期望参考> ` → `cmp_exit=0`，`od -c` 两侧输出完全相同\n- 双方 sha256 均为 `93d7ff1e…326298`\n四条检查均实际执行，未以推理替代；复核结论 PASS。\n\n### 验收标准 2：既有文件不变、无残留临时文件 —— 通过（附一处已清理的偏差说明）\n- 写入前后 `sim-result.txt` 大小 21 字节、sha256 恒为 `63fb4e5348f53f444d780cae8701ed4db98aef8b4eccf079818c683f9ba79600`，内容未被改动\n- `ls -la` 前后工作区条目一致：`auto-result.txt`、`deepseek-harness/`、`sim-result.txt`，共 3 项\n- `ls -A | grep -i tmp` → `NO_TMP_FILES`（中转文件已通过 mv 原子重命名消耗，无 .tmp 残留）\n- 未执行部署、发布、网络请求或凭据操作\n- 偏差如实说明：独立复核者为做 cmp 比对，在 `/tmp/expected_dsh_auto.txt` 生成过一次参考文件（工作区之外）。该文件随后已用 `rm -f` 删除，`test -e` 确认 `REMOVED`；工作区外无遗留物。\n\n最终状态：`auto-result.txt` 16 字节，`93d7ff1e…326298`；`sim-result.txt` 21 字节，`63fb4e53…9600`。",
+        "review": {
+          "verdict": "pass",
+          "risk": "low",
+          "results": [
+            {
+              "criterion": 0,
+              "passed": true,
+              "evidence": "独立实测工作区文件：wc -c < auto-result.txt 输出 16；xxd 输出 4453 485f 4155 544f 5f4c 4956 455f 4f4b（DSH_AUTO_LIVE_OK），共 16 字节；od -An -tx1 -v 为 44 53 48 5f 41 55 54 4f 5f 4c 49 56 45 5f 4f 4b，首字节 0x44（非 BOM 的 0xEF），末字节 0x4b（无 0x0a/0x20/0x00）；printf 'DSH_AUTO_LIVE_OK' | cmp - auto-result.txt 退出码 0；perl 字节检查 len=16、has_bom=0、trailing_ws=0、equals=1。"
+            },
+            {
+              "criterion": 1,
+              "passed": true,
+              "evidence": "复核者本人调用原生 read 工具读取 auto-result.txt，返回内容为单行 DSH_AUTO_LIVE_OK，起始无 U+FEFF；随后以 printf 'DSH_AUTO_LIVE_OK' | cmp - auto-result.txt 执行逐字节比对，cmp_exit=0，并用 xxd/od 复核每字节一致。cmp 通过管道输入完成，未在工作区或 /tmp 生成任何参考文件。"
+            },
+            {
+              "criterion": 2,
+              "passed": true,
+              "evidence": "ls -la 显示工作区仅有 auto-result.txt、sim-result.txt、deepseek-harness/（其中 default-workspace 为空目录）；sim-result.txt 仍为 21 字节，printf 'DSH_DASHBOARD_LIVE_OK' | cmp - sim-result.txt 退出码 0，内容与基线描述一致；对工作区检索 *tmp*、*.swp、*~ 均无结果，无临时文件残留；执行者自述的 /tmp/expected_dsh_auto.txt 经 test -e 确认已不存在，未发现工作区外残留物。"
+            }
+          ],
+          "remainingRisks": [],
+          "evidence": "复核在真实工作区 /private/var/folders/9s/97_39tp131l2fhb8wf0vmdnw0000gn/T/perse-dashboard-20261020-153508-42705d-4_g2ph0m/workspace 内只读执行：auto-result.txt 为 16 字节，xxd/od 逐字节与 DSH_AUTO_LIVE_OK 完全一致（44 53 48 5f 41 55 54 4f 5f 4c 49 56 45 5f 4f 4b），无 BOM、无尾随换行或空白；printf 期望串经 cmp 比对退出码 0（cmp_exit=0）。既有 sim-result.txt 未被改动（21 字节，内容 DSH_DASHBOARD_LIVE_OK，cmp 退出码 0）。工作区无临时文件残留，deepseek-harness/default-workspace 为空，/tmp/expected_dsh_auto.txt 不存在。复核期间未实施任何写入或修复，未进行部署、网络请求或凭据操作；三条标准均为实际命令核验结果，非引用执行者声明。"
+        }
+      },
+      "questionsNote": "The express analysis returned an empty questions array; there were no questions to localize."
+    }
+  },
+  "packageSha256VerifiedAgainstCurrentTree": true,
+  "notes": "The current tree packs to the same SHA256 as the native and live runs; the Lab lane is synthetic and not packaged."
+}

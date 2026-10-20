@@ -71,6 +71,15 @@ export const en = {
     'The reviewer ended without a report after one reminder. Retry verification to start a fresh independent review.',
   criteriaGenerated:
     'Analysis-generated criteria can be adjusted in Properties before execution.',
+  ownerExpectations: 'Acceptance expectations supplied by owner:',
+  handoffPrompt:
+    'Use dashboard_claim_next with taskId "{id}". Read its acceptance criteria, implement and verify the work, then submit concrete evidence with dashboard_report. Do not mark it accepted.',
+  machineHumanImplementation:
+    'Human implementation is required; this task cannot be executed automatically.',
+  machineVerificationFailed: 'Machine verification failed: ',
+  machineVerificationUnavailable: 'Automatic verification unavailable: ',
+  machineAgentResumed:
+    'A linked Agent resumed during verification. Completion remains pending.',
 
   closePermissionSettings: 'Close permission settings',
   attention: 'Needs attention',
@@ -251,6 +260,23 @@ export const en = {
   requeue: 'Return to queue',
   blockedHelp:
     'Inspect the linked Session before returning this task to the queue.',
+  imageInput: 'Input images',
+  imageInputHelp:
+    'Paste into the field or attach an image (PNG, JPEG, WebP, GIF; at most {count}, up to {size} each).',
+  imageAttach: 'Attach image',
+  imageSourceDescription: 'Task description',
+  imageSourceCriteria: 'Acceptance criteria',
+  imageRemove: 'Remove image',
+  imageUnsupported: 'Unsupported image type. Use PNG, JPEG, WebP or GIF.',
+  imageTooLarge: 'Image is larger than the {size} limit.',
+  imageTooMany: 'A task can carry at most {count} input images.',
+  imageTooLargePixels: 'Image dimensions are larger than this Host allows.',
+  imageCorrupt: 'The image could not be decoded. Paste a valid image file.',
+  imageInputUnavailable:
+    'This DSH Host has no attachment capability; image input is unavailable.',
+  imageModelUnsupported:
+    'The selected model route does not declare image input. Select an image-capable model and retry.',
+  imageLoadFailed: 'Saved input image could not be loaded.',
 } as const
 export type Key = keyof typeof en
 export const zh: Record<Key, string> = {
@@ -313,6 +339,13 @@ export const zh: Record<Key, string> = {
   reviewFailedNote: '独立复核未能无保留地验证全部标准。',
   reviewMissingNote: '复核者在一次提醒后仍未报告；重新验证可启动新的独立复核。',
   criteriaGenerated: '分析生成的验收标准可在执行前通过“属性”调整。',
+  ownerExpectations: '所有者补充的验收期望：',
+  handoffPrompt:
+    '使用 dashboard_claim_next，taskId 为 "{id}"。阅读其验收标准，实施并验证工作，然后用 dashboard_report 提交具体证据。不要将其标记为已验收。',
+  machineHumanImplementation: '此任务需要人工实施，无法自动执行。',
+  machineVerificationFailed: '机器验证失败：',
+  machineVerificationUnavailable: '自动验证不可用：',
+  machineAgentResumed: '验证期间有关联 Agent 恢复运行，完成仍待处理。',
 
   closePermissionSettings: '关闭权限设置',
   attention: '需要你处理',
@@ -484,6 +517,22 @@ export const zh: Record<Key, string> = {
     '队列任务可由此工作区的任意 agent 认领；指定任务只能由被分配的会话认领。',
   requeue: '退回队列',
   blockedHelp: '先查看关联会话，再将任务退回队列。',
+  imageInput: '输入图片',
+  imageInputHelp:
+    '可直接粘贴到输入框，或附加图片（PNG、JPEG、WebP、GIF；最多 {count} 张，每张不超过 {size}）。',
+  imageAttach: '附加图片',
+  imageSourceDescription: '任务说明',
+  imageSourceCriteria: '验收标准',
+  imageRemove: '移除图片',
+  imageUnsupported: '不支持的图片格式，请使用 PNG、JPEG、WebP 或 GIF。',
+  imageTooLarge: '图片超过 {size} 上限。',
+  imageTooMany: '每个任务最多 {count} 张输入图片。',
+  imageTooLargePixels: '图片尺寸超过此 Host 的上限。',
+  imageCorrupt: '无法解码该图片，请粘贴有效的图片文件。',
+  imageInputUnavailable: '此 DSH Host 未提供附件能力，无法使用图片输入。',
+  imageModelUnsupported:
+    '所选模型路由未声明图片输入能力。请选择支持图片的模型后重试。',
+  imageLoadFailed: '无法加载已保存的输入图片。',
 }
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {

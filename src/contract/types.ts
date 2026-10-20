@@ -9,6 +9,8 @@ export type TaskStatus =
   | 'done'
 export type Risk = 'low' | 'medium' | 'high'
 export type Route = 'express' | 'staged' | 'needs-info' | 'human'
+/** Persisted task language; absent on legacy records, inferred deterministically. */
+export type TaskLanguage = 'zh' | 'en'
 export interface Analysis {
   summary: string
   plan: string[]
@@ -54,6 +56,45 @@ export interface EvidenceImage {
   caption: string
   criterion?: number
 }
+/** Raster formats accepted for task input images. */
+export type ImageMediaType =
+  | 'image/png'
+  | 'image/jpeg'
+  | 'image/webp'
+  | 'image/gif'
+/** Where the owner pasted an input image in the intake form. */
+export type InputImageSource = 'description' | 'criteria'
+/** Durable, serializable reference to one task input image. Never contains bytes. */
+export interface InputImage {
+  attachmentId: string
+  mediaType: ImageMediaType
+  bytes: number
+  width: number
+  height: number
+  name: string
+  source: InputImageSource
+}
+/** Base64 image supplied on create/update; the Host persists it before mutation. */
+export interface InputImageDraft {
+  mediaType: ImageMediaType
+  data: string
+  name?: string
+  source: InputImageSource
+}
+/** Existing task image retained by an edit without re-uploading its bytes. */
+export interface InputImageKeep {
+  keep: true
+  attachmentId: string
+}
+export type InputImageUpdate = InputImageDraft | InputImageKeep
+/** Deployment image policy exposed to the client. */
+export interface ImageInputLimits {
+  maxImages: number
+  maxImageBytes: number
+  maxImagePixels: number
+  maxImageDimension: number
+  mediaTypes: ImageMediaType[]
+}
 export interface Task {
   id: string
   workspaceId: string
@@ -63,6 +104,9 @@ export interface Task {
   checked: boolean[]
   evidence: string
   images: EvidenceImage[]
+  inputImages: InputImage[]
+  /** Additive field: null/absent on legacy tasks means infer from content. */
+  language: TaskLanguage | null
   priority: number
   assignee: string | null
   sessionId: string | null
@@ -111,6 +155,9 @@ export interface CreateRequest {
   intake?: boolean
   needsManual?: boolean
   completionPolicy?: CompletionPolicy
+  inputImages?: InputImageDraft[]
+  /** New tasks persist the active DSH language; omitted falls back to inference. */
+  language?: TaskLanguage
 }
 export interface UpdateRequest {
   requestId: string
@@ -128,6 +175,7 @@ export interface UpdateRequest {
   evidence?: string
   completionPolicy?: CompletionPolicy
   needsManual?: boolean
+  inputImages?: InputImageUpdate[]
 }
 export interface AgentRequest {
   requestId: string
@@ -178,4 +226,13 @@ export interface DashboardSnapshot {
   ledger: Audit[]
   dispatch: DispatchState
   capabilities?: Record<string, boolean>
+  imageLimits?: ImageInputLimits
+}
+/** Host-normalized create command: drafts already resolved to durable references. */
+export type CreateCommand = Omit<CreateRequest, 'inputImages'> & {
+  inputImages?: InputImage[]
+}
+/** Host-normalized update command: retained and newly saved references. */
+export type UpdateCommand = Omit<UpdateRequest, 'inputImages'> & {
+  inputImages?: InputImage[]
 }

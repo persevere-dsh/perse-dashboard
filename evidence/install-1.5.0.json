@@ -1,0 +1,20 @@
+{
+  "disposableHome": "/tmp/perse-profile-check-oJQuTI",
+  "profile": "desktopcopy (disposable copy of the owner desktop profile)",
+  "profileSource": "~/.dsh/profiles/desktop",
+  "installCommand": "DSH_HOME=<disposable> dsh plugin --profile desktopcopy add <packed 1.5.0 tarball>",
+  "artifactSha256": "cedd17b8277d2c2225dae27a3ba7b8d7520cd2045e8b18cb3adccd8a59e13d09",
+  "installedVersion": "1.5.0",
+  "runtimeVersion": "0.2.1-rc.2",
+  "bootCommand": "DSH_HOME=<disposable> dsh --profile desktopcopy --host 127.0.0.1 --port 49667 --no-open",
+  "bootUrl": "http://127.0.0.1:49667",
+  "authenticatedUiStatus": 200,
+  "servedClientBytes": 724886,
+  "installedClientBytes": 724814,
+  "clientMatchesInstalledPrefix": true,
+  "servedSuffix": ";\n//# sourceMappingURL=??perse-dashboard/client.js.map&rev=0604bd677e6b\n",
+  "installedClientSha256": "afe436d91a7b82acb05814e94dcb1843733d96f0382c57c475b833b9c3223f54",
+  "liveDesktopProfileUpdated": false,
+  "liveUpdateRequirement": "Owner approval is required before updating the real desktop profile; not requested or claimed in this session.",
+  "checkedAt": "2026-10-20T07:22:52.594Z"
+}

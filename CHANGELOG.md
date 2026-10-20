@@ -1,9 +1,32 @@
 # Changelog
 
+## 1.6.0
+
+- Persist task language on create from the active DSH locale (`zh`/`en`). Legacy tasks without the additive field resolve deterministically: persisted value first, then Han/Latin share of owner-authored title/description (generated criteria only when that is inconclusive), then `en` for empty content. All five existing board tasks infer `zh` and keep their stored criteria, evidence and versions.
+- Generate complete Chinese analysis, execution and review prompts plus Chinese bounded report reminders for `zh` tasks; English tasks keep the English prompts. `dashboard_triage`, `dashboard_report`, `dashboard_review`, field keys, `TASK_DATA=`, `EXECUTOR_EVIDENCE=`, `REPORT_REMINDER:` and the new `PERSE_PHASE=` marker remain literal.
+- Localize client chrome: the intake form appends `所有者补充的验收期望：`, the prepared DSH draft prompt follows the active locale, and machine notes such as `human-acceptance-required`, `Human implementation required`, `Machine verification failed:` and `Automatic verification unavailable:` render in Chinese. Stored note tokens, accepted evidence and `completion.evidenceHash` are unchanged.
+- Normalize the legacy English intake marker for display and prompt facts on Chinese tasks without rewriting storage or bumping the version; the next owner edit saves the Chinese marker.
+- Add language contract, prompt, reminder, note and legacy-task tests; extend Lab with a bilingual language scenario and the native lane with zh prompt/field/reminder checks plus an inferred-English regression. Record `language-evidence.json` in the run summary, including live zh output when the live lane runs.
+- Document the language priority, additive migration, frozen historical evidence and the rule that historical analysis, evidence and review are never silently translated.
+
+## 1.5.0
+
+- Accept pasted and attached PNG/JPEG/WebP/GIF input images in both the task-description and acceptance-criteria fields, with bounded validation, thumbnails, source labels, byte sizes and explicit removal in create and edit forms.
+- Persist only normalized input-image references (attachment id, media type, byte size, dimensions, name, source) on the task; previews load through a new owner-only task-scoped `inputImage` Remote that reads one recorded attachment and rejects foreign, missing or corrupt ids. Task snapshots never carry base64.
+- Send ordered labelled image content parts in analysis, execution and independent review prompts; `TASK_DATA` gains metadata only, and the bounded repair reminder stays text-only so image parts are never duplicated.
+- Block an image-bearing task with a visible capability message when its selected model route is text-only instead of letting the route silently replace images with placeholders.
+- Add contract coverage for input defaults/migration, create/update idempotency, edit invalidation of analysis/review/completion, prompt ordering and attachment-read confinement, plus a native browser journey that verifies every phase request contains image blocks whose SHA-256 equals the uploaded fixtures. Storage stays version 1; old tasks default to no input images.
+
 ## Unreleased
 
 - Document the DSH 0.2.1 Session-log boundary: a 0.2.0 Host skips this pinned plugin and refuses logs containing `job/registered`, so the remedy is to launch the 0.2.1 runtime rather than downgrade or edit logs.
 - Require install verification against the exact DSH app the owner runs, including Session resume, a new real-model turn and a client reload.
+
+## 1.4.2
+
+- Replace the orange dashboard accent with the DSH business-blue token. `--pd-accent` now follows `--dsw-alias-state-business-primary` (light `#4176e6`, dark follows the DSH theme) and primary button labels follow `--dsw-alias-label-primary-foreground`; the retired `#f0b03a` and `#211704` literals are gone from source, build output and the packed tarball.
+- Keep success `#28ad79`, danger `#df5c67`, and the warm semantic stage colors needs-info `#e1a44c` and in-review `#c5a052` unchanged. These stage colors are status indicators, not the brand accent, and must not be confused with it.
+- Add source/build/tarball regression assertions plus native browser checks for the primary button, focus ring, selected tab underline, attention/stat icons, audit nodes and readable light/dark/mobile screenshots.
 
 ## 1.4.1
 

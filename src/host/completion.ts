@@ -10,7 +10,7 @@ import {
   RULE_VERSION,
 } from './policy.ts'
 import { reviewPrompt } from './prompts.ts'
-import { runPhase } from './phases.ts'
+import { runPhase, imageRouteRefusal } from './phases.ts'
 export class CompletionCoordinator {
   private jobs = new Map<string, Promise<Task>>()
   private tail: Promise<unknown> = Promise.resolve()
@@ -82,6 +82,21 @@ export class CompletionCoordinator {
             const sessionId = await this.runtime.create(task.workspaceId)
             if (this.closed) return this.task(id)
             task = await this.board.beginReview(sessionId, id, task.version)
+            const refusal = task.inputImages.length
+              ? imageRouteRefusal(
+                  task,
+                  await this.runtime.imageRoute(sessionId),
+                )
+              : null
+            if (refusal)
+              return this.board.update({
+                requestId: crypto.randomUUID(),
+                id,
+                expectedVersion: task.version,
+                action: 'move',
+                status: 'blocked',
+                evidence: refusal,
+              })
             const prompt = reviewPrompt(task)
             await runPhase(
               this.board,

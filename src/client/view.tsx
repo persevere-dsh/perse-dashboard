@@ -19,18 +19,33 @@ import type {
 } from '../contract/types.ts'
 import type { createDashboardStore } from './store.ts'
 import type { Key } from './locales.ts'
+import { automationNoteText } from './notes.ts'
+import { normalizeDescription, resolveTaskLanguage } from '../contract/language.ts'
+import type { TaskLanguage } from '../contract/types.ts'
 import { CompletionEditor } from './completion-editor.tsx'
 import { OptionGroup } from './option-group.tsx'
 import { completionBlocks, nextStep, taskNeedsAction } from './workflow.ts'
 import { EvidenceText, EvidenceImages } from './evidence.tsx'
 import { validSnapshot } from './validation.ts'
+import {
+  FALLBACK_IMAGE_LIMITS,
+  InputImageControl,
+  InputImageGallery,
+  imageUpdates,
+  imagesChanged,
+  savedImageEntries,
+  useImageEntries,
+  type ImageEntry,
+} from './input-images.tsx'
 import type {
   CompletionPolicy,
+  ImageInputLimits,
   TaskCommand,
   DashboardSnapshot,
 } from '../contract/types.ts'
 export interface Injected extends PermissionControls {
   image(r: { id: string; path: string }): Promise<string>
+  inputImage(r: { id: string; attachmentId: string }): Promise<string>
   create(r: CreateRequest): Promise<Task>
   update(r: UpdateRequest): Promise<Task>
   dispatch(r: DispatchRequest): Promise<DispatchState>
@@ -38,6 +53,7 @@ export interface Injected extends PermissionControls {
   verify(r: TaskCommand): Promise<Task>
   openSession(id: string): void
   handoff(ws: string, id: string): void
+  language(): TaskLanguage
   t: TranslateNS<'perse-dashboard'>
 }
 type Props = PropsRuntime<'main'> &
@@ -116,7 +132,7 @@ export function Dashboard(props: Props) {
     (task) =>
       (!workspaceId || task.workspaceId === workspaceId) &&
       (archived || !task.archived) &&
-      `${task.title} ${task.description}`
+      `${task.title} ${normalizeDescription(task.description, resolveTaskLanguage(task))}`
         .toLowerCase()
         .includes(query.toLowerCase()),
   )
@@ -583,7 +599,10 @@ export function Dashboard(props: Props) {
                         </span>
                         <strong>{item.title}</strong>
                         <span className="pd-card-description">
-                          {item.description || t('noDescription')}
+                          {normalizeDescription(
+                            item.description,
+                            resolveTaskLanguage(item),
+                          ) || t('noDescription')}
                         </span>
                         <span className="pd-card-tags">
                           <span
@@ -916,18 +935,7 @@ export function Dashboard(props: Props) {
             {task.status === 'blocked' && <EvidenceText text={task.evidence} />}
             {task.automationNote && (
               <p role="status">
-                {task.automationNote === 'phase-report-missing'
-                  ? t('phaseMissingNote')
-                  : task.automationNote === 'human-acceptance-required' ||
-                      task.automationNote.startsWith(
-                        'Automatic completion held:',
-                      )
-                    ? t('humanGateNote')
-                    : task.automationNote === 'review-failed'
-                      ? t('reviewFailedNote')
-                      : task.automationNote === 'review-report-missing'
-                        ? t('reviewMissingNote')
-                        : task.automationNote}
+                {automationNoteText(task.automationNote, t)}
               </p>
             )}
           </section>
@@ -1006,8 +1014,12 @@ export function Dashboard(props: Props) {
             <section className="pd-section">
               <h3>{t('description')}</h3>{' '}
               <p className="pd-muted" style={{ whiteSpace: 'pre-wrap' }}>
-                {task.description}
+                {normalizeDescription(
+                  task.description,
+                  resolveTaskLanguage(task),
+                )}
               </p>
+              <InputImageGallery task={task} load={props.inputImage} t={t} />
             </section>
             <section className="pd-section">
               <h3>
@@ -1128,7 +1140,7 @@ export function Dashboard(props: Props) {
             )}
             {task.automationNote && (
               <div role="status" className="pd-banner">
-                {task.automationNote}
+                {automationNoteText(task.automationNote, t)}
               </div>
             )}
             {task.review && (
@@ -1188,6 +1200,11 @@ export function Dashboard(props: Props) {
                   task={task}
                   t={t}
                   busy={busy || linkedRunning || !commandsAvailable}
+                  limits={snapshot?.imageLimits ?? FALLBACK_IMAGE_LIMITS}
+                  inputImage={props.inputImage}
+                  imageInputAvailable={
+                    snapshot?.capabilities?.imageInput !== false
+                  }
                   dirty={(value) =>
                     setDirtyParts((old) =>
                       old.editor === value ? old : { ...old, editor: value },
@@ -1314,6 +1331,12 @@ export function Dashboard(props: Props) {
             busy={busy}
             close={closeCreate}
             dirty={setCreateDirty}
+            limits={snapshot?.imageLimits ?? FALLBACK_IMAGE_LIMITS}
+            inputImage={props.inputImage}
+            language={props.language}
+            imageInputAvailable={
+              snapshot?.capabilities?.imageInput !== false
+            }
             submit={(r) =>
               act(async () => {
                 const created = await props.create(r)
@@ -1450,6 +1473,10 @@ function CreateForm({
   busy,
   close,
   dirty,
+  limits,
+  inputImage,
+  language,
+  imageInputAvailable,
   submit,
 }: {
   t: Injected['t']
@@ -1463,6 +1490,10 @@ function CreateForm({
   busy: boolean
   close: () => void
   dirty: (value: boolean) => void
+  limits: ImageInputLimits
+  inputImage: Injected['inputImage']
+  language: Injected['language']
+  imageInputAvailable: boolean
   submit: (r: CreateRequest) => void
 }) {
   const [ws, setWs] = useState(
@@ -1480,12 +1511,14 @@ function CreateForm({
       instructions: '',
       checks: [],
     })
+  const images = useImageEntries({ initial: [], limits, t })
   useLayoutEffect(() => {
     dirty(
       !!(
         title.trim() ||
         description.trim() ||
         criteria.trim() ||
+        images.entries.length ||
         completionPolicy.instructions.trim() ||
         completionPolicy.checks.length ||
         completionPolicy.mode !== 'reviewed' ||
@@ -1500,6 +1533,7 @@ function CreateForm({
     title,
     description,
     criteria,
+    images.entries,
     completionPolicy,
     priority,
     assignee,
@@ -1519,7 +1553,7 @@ function CreateForm({
           title,
           description:
             intake && criteria.trim()
-              ? `${description}\n\nAcceptance expectations supplied by owner:\n${criteria}`.trim()
+              ? `${description}\n\n${t('ownerExpectations')}\n${criteria}`.trim()
               : description,
           criteria: intake
             ? []
@@ -1532,6 +1566,10 @@ function CreateForm({
           intake,
           needsManual,
           completionPolicy,
+          language: language(),
+          inputImages: images.entries.flatMap((entry) =>
+            entry.kind === 'draft' ? [entry.draft] : [],
+          ),
         })
       }}
     >
@@ -1552,6 +1590,7 @@ function CreateForm({
         <input
           required
           data-dialog-autofocus
+          aria-label={t('title')}
           maxLength={300}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -1560,19 +1599,57 @@ function CreateForm({
       <label className="pd-field pd-span">
         {t('description')}
         <textarea
+          aria-label={t('description')}
           value={description}
           maxLength={12000}
+          onPaste={
+            imageInputAvailable ? images.paste('description') : undefined
+          }
           onChange={(e) => setDescription(e.target.value)}
         />
       </label>
+      {imageInputAvailable ? (
+        <InputImageControl
+          source="description"
+          entries={images.entries}
+          setEntries={images.setEntries}
+          addFiles={images.addFiles}
+          error={images.errorFor('description')}
+          limits={limits}
+          load={inputImage}
+          t={t}
+          disabled={busy}
+          fieldLabel={t('description')}
+        />
+      ) : (
+        <p className="pd-muted pd-span">{t('imageInputUnavailable')}</p>
+      )}
       <label className="pd-field pd-span">
         {t(intake ? 'criteriaOptional' : 'criteria')}
         <textarea
           required={!intake}
+          aria-label={t(intake ? 'criteriaOptional' : 'criteria')}
           value={criteria}
+          onPaste={
+            imageInputAvailable ? images.paste('criteria') : undefined
+          }
           onChange={(e) => setCriteria(e.target.value)}
         />
       </label>
+      {imageInputAvailable ? (
+        <InputImageControl
+          source="criteria"
+          entries={images.entries}
+          setEntries={images.setEntries}
+          addFiles={images.addFiles}
+          error={images.errorFor('criteria')}
+          limits={limits}
+          load={inputImage}
+          t={t}
+          disabled={busy}
+          fieldLabel={t(intake ? 'criteriaOptional' : 'criteria')}
+        />
+      ) : null}
       <OptionGroup
         label={t('priority')}
         value={priority}
@@ -1647,7 +1724,12 @@ type EditableTask = Pick<
 const editable = (task: Task): EditableTask => ({
   title: task.title,
   criteria: task.criteria,
-  description: task.description,
+  // The edit draft starts from the localized display text, so the next owner
+  // save persists the Chinese marker without rewriting storage on load.
+  description: normalizeDescription(
+    task.description,
+    resolveTaskLanguage(task),
+  ),
   priority: task.priority,
   completionPolicy: task.completionPolicy ?? {
     mode: 'manual',
@@ -1660,29 +1742,51 @@ function TaskEditor({
   task,
   t,
   busy,
+  limits,
+  inputImage,
+  imageInputAvailable,
   save,
   dirty: reportDirty,
 }: {
   task: Task
   t: Injected['t']
   busy: boolean
-  save: (change: EditableTask, version: number) => Promise<boolean>
+  limits: ImageInputLimits
+  inputImage: Injected['inputImage']
+  imageInputAvailable: boolean
+  save: (
+    change: EditableTask & { inputImages?: UpdateRequest['inputImages'] },
+    version: number,
+  ) => Promise<boolean>
   dirty: (value: boolean) => void
 }) {
   const [draft, setDraft] = useState(() => editable(task)),
     [baseline, setBaseline] = useState(() => editable(task)),
     [version, setVersion] = useState(task.version)
-  const dirty = JSON.stringify(draft) !== JSON.stringify(baseline),
+  const images = useImageEntries({
+      initial: savedImageEntries(task),
+      limits,
+      t,
+    }),
+    [imageBaseline, setImageBaseline] = useState<ImageEntry[]>(() =>
+      savedImageEntries(task),
+    )
+  const dirty =
+      JSON.stringify(draft) !== JSON.stringify(baseline) ||
+      imagesChanged(images.entries, imageBaseline),
     stale = dirty && version !== task.version
   useLayoutEffect(() => {
     reportDirty(dirty)
   }, [dirty, reportDirty])
   useEffect(() => {
     if (!dirty && version !== task.version) {
-      const next = editable(task)
+      const next = editable(task),
+        nextImages = savedImageEntries(task)
       setDraft(next)
       setBaseline(next)
       setVersion(task.version)
+      images.setEntries(nextImages)
+      setImageBaseline(nextImages)
     }
   }, [task, version, dirty])
   const change = <K extends keyof EditableTask>(
@@ -1690,10 +1794,13 @@ function TaskEditor({
     value: EditableTask[K],
   ) => setDraft((old) => ({ ...old, [key]: value }))
   const reload = () => {
-    const next = editable(task)
+    const next = editable(task),
+      nextImages = savedImageEntries(task)
     setDraft(next)
     setBaseline(next)
     setVersion(task.version)
+    images.setEntries(nextImages)
+    setImageBaseline(nextImages)
   }
   return (
     <details>
@@ -1708,6 +1815,7 @@ function TaskEditor({
         <input
           maxLength={300}
           disabled={busy}
+          aria-label={t('title')}
           value={draft.title}
           onChange={(e) => change('title', e.target.value)}
         />
@@ -1717,11 +1825,33 @@ function TaskEditor({
         <textarea
           maxLength={12000}
           disabled={busy}
+          aria-label={t('description')}
           value={draft.description}
+          onPaste={
+            imageInputAvailable ? images.paste('description') : undefined
+          }
           onChange={(e) => change('description', e.target.value)}
         />
       </label>
-      <fieldset className="pd-criteria-editor">
+      {imageInputAvailable ? (
+        <InputImageControl
+          source="description"
+          entries={images.entries}
+          setEntries={images.setEntries}
+          addFiles={images.addFiles}
+          error={images.errorFor('description')}
+          limits={limits}
+          taskId={task.id}
+          load={inputImage}
+          t={t}
+          disabled={busy}
+          fieldLabel={t('description')}
+        />
+      ) : null}
+      <fieldset
+        className="pd-criteria-editor"
+        onPaste={imageInputAvailable ? images.paste('criteria') : undefined}
+      >
         <legend>{t('criteriaItems')}</legend>
         <p>{t('criteriaGenerated')}</p>
         {draft.criteria.map((criterion, i) => (
@@ -1761,6 +1891,21 @@ function TaskEditor({
           {t('addCriterion')}
         </button>
       </fieldset>
+      {imageInputAvailable ? (
+        <InputImageControl
+          source="criteria"
+          entries={images.entries}
+          setEntries={images.setEntries}
+          addFiles={images.addFiles}
+          error={images.errorFor('criteria')}
+          limits={limits}
+          taskId={task.id}
+          load={inputImage}
+          t={t}
+          disabled={busy}
+          fieldLabel={t('criteriaItems')}
+        />
+      ) : null}
       <label className="pd-field">
         {t('priority')}
         <select
@@ -1796,11 +1941,25 @@ function TaskEditor({
           busy ||
           !draft.title.trim() ||
           draft.criteria.some((c) => !c.trim()) ||
+          !!(images.errorFor('description') || images.errorFor('criteria')) ||
           !dirty ||
           stale
         }
         onClick={async () => {
-          if (await save(draft, version)) setBaseline(draft)
+          if (
+            await save(
+              {
+                ...draft,
+                ...(imagesChanged(images.entries, imageBaseline)
+                  ? { inputImages: imageUpdates(images.entries) }
+                  : {}),
+              },
+              version,
+            )
+          ) {
+            setBaseline(draft)
+            setImageBaseline(images.entries)
+          }
         }}
       >
         {t('save')}

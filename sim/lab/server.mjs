@@ -188,6 +188,7 @@ const server = http.createServer(async (req, res) => {
             'analyze',
             'verify',
             'image',
+            'inputImage',
           ].includes(name)
         )
           return json(res, { ok: false, error: 'Unknown command' }, 404)
@@ -198,7 +199,7 @@ const server = http.createServer(async (req, res) => {
             503,
           )
         const value = await backend.owner[name](body)
-        if (name !== 'image') await publish()
+        if (!['image', 'inputImage'].includes(name)) await publish()
         return json(res, { ok: true, value })
       }
     }

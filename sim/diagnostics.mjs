@@ -54,6 +54,8 @@ export function apply(ctx) {
       JSON.stringify(
         {
           installedPackage: true,
+          clientPath: actual,
+          expectedPath: expected,
           sha256: createHash('sha256')
             .update(readFileSync(actual))
             .digest('hex'),

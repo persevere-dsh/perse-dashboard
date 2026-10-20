@@ -120,7 +120,9 @@ def main():
         (run/'runtime.json').write_text(json.dumps(summary,indent=2));os.chmod(run/'runtime.json',0o600)
         browser_env={**env,'PERSEVERE_DSH_SIM':str(run)}
         command(['node','sim/browser.mjs'],run/'browser.log',browser_env,args.timeout,lock.fileno())
-        summary['assertions']=json.loads((run/'browser-results.json').read_text());summary['artifactBinding']=json.loads((run/'artifact-binding.json').read_text());summary['status']='passed'
+        summary['assertions']=json.loads((run/'browser-results.json').read_text());summary['artifactBinding']=json.loads((run/'artifact-binding.json').read_text())
+        if (run/'language-evidence.json').exists():summary['languageEvidence']=json.loads((run/'language-evidence.json').read_text())
+        summary['status']='passed'
         if args.keep:
             print('Preview active. Ctrl-C cleans up this sim only.',flush=True)
             while process.poll() is None:time.sleep(.5)
@@ -129,6 +131,7 @@ def main():
     except BaseException as error:
         summary.update(status='failed',error=str(error))
         if (run/'browser-results.json').exists():summary['assertions']=json.loads((run/'browser-results.json').read_text())
+        if (run/'language-evidence.json').exists():summary['languageEvidence']=json.loads((run/'language-evidence.json').read_text())
         print(str(error),file=sys.stderr)
     finally:
         cleaned=terminate(process)

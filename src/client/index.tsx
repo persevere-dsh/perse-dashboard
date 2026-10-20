@@ -14,7 +14,8 @@ import { createDashboardStore } from './store.ts'
 import { permissionControls } from './permission-api.ts'
 import type { PermissionControls } from './permissions.tsx'
 import { Dashboard, DashboardIcon, type Injected } from './view.tsx'
-import type { DashboardSnapshot } from '../contract/types.ts'
+import { handoffPrompt } from './handoff.ts'
+import type { DashboardSnapshot, TaskLanguage } from '../contract/types.ts'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface ResourceProtocolMap {
     'perse-dashboard': DashboardSnapshot
@@ -110,8 +111,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       }
       const injected = (): Injected => ({
         ...permissions,
+        language: (): TaskLanguage =>
+          scope.locale.getSnapshot().active === 'zh' ? 'zh' : 'en',
         image: async (request) => {
           const result = await scope.remote.perseDashboard.image(request)
+          if (!result.ok) throw result.error
+          return result.value
+        },
+        inputImage: async (request) => {
+          const result = await scope.remote.perseDashboard.inputImage(request)
           if (!result.ok) throw result.error
           return result.value
         },
@@ -143,7 +151,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         openSession: (id) => scope.uiWorkspace.openSession(id as never),
         handoff: (workspaceId, id) =>
           scope.uiWorkspace.startSession(workspaceId as never, {
-            prompt: `Use dashboard_claim_next with taskId "${id}". Read its acceptance criteria, implement and verify the work, then submit concrete evidence with dashboard_report. Do not mark it accepted.`,
+            prompt: handoffPrompt(
+              scope.locale.getSnapshot().active === 'zh' ? 'zh' : 'en',
+              id,
+            ),
           }),
         t: scope.locale.bind('perse-dashboard'),
       })

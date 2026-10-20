@@ -5,8 +5,14 @@ The task/controller contracts remain authoritative and unchanged. This revision 
 ## References
 
 - [Dashi taskboard](https://github.com/chuspeeism/dashi-taskboard) `723c400e`: separate task editor/detail surfaces, property grouping, explicit dialog dismissal and task navigation.
-- [sparkDash](https://github.com/MiaAI-Lab/sparkDash) `3e6d4ef6`: compact metric cards, subtle surface borders, 16px corners, restrained amber accents, semantic state dots and readable secondary labels. The user's existing LAN deployment was visually inspected.
+- [sparkDash](https://github.com/MiaAI-Lab/sparkDash) `3e6d4ef6`: compact metric cards, subtle surface borders, 16px corners, restrained semantic accents, semantic state dots and readable secondary labels. The user's existing LAN deployment was visually inspected.
 - DSH 0.2.1-rc.2: native slots, generated Remote, official color tokens and framework Session state. No host DOM or private state changes.
+
+## Theme
+
+The brand accent follows DSH `--dsw-alias-state-business-primary` (light `#4176e6`; dark inherits the active DSH theme, `#7aaaff` in 0.2.1-rc.2) and primary labels follow `--dsw-alias-label-primary-foreground`. This single token drives the primary button, keyboard focus ring, checkbox/radio, stat icons, card hover/selection, selected tab underline, audit nodes and attention surfaces. Dark mode and foreground colors therefore follow the enclosing DSH theme instead of plugin-owned orange literals.
+
+Stage dots are semantic state colors, not brand accent. `needs-info #e1a44c` and `in-review #c5a052` intentionally keep warm amber, while success `#28ad79` and danger `#df5c67` keep their established meanings. Do not recolour them to blue merely because the primary accent changed.
 
 ## Components and navigation
 

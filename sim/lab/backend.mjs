@@ -4,12 +4,18 @@ import {
   initialBoard,
   boardSchema,
 } from '../../lib/types/host/board.js'
-import { runPhase } from '../../lib/types/host/phases.js'
+import { runPhase, imageRouteRefusal } from '../../lib/types/host/phases.js'
 import { evidenceImage } from '../../lib/types/host/artifacts.js'
+import {
+  decodeDraft,
+  inputImageDataUrl,
+  taskImageLimits,
+} from '../../lib/types/host/images.js'
 import { Dispatcher } from '../../lib/types/host/dispatch.js'
 import { CompletionCoordinator } from '../../lib/types/host/completion.js'
 import { permissionControls } from '../../lib/types/client/permission-api.js'
 import { mkdir, writeFile, readFile, rename } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
 export async function makeBackend(
@@ -47,6 +53,7 @@ export async function makeBackend(
       cwd: workspaces.find((w) => w.id === ws).path,
       updatedAt: Date.now(),
       running: false,
+      imageCapable: true,
       projectionValues: {
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
         permissions: { currentValue: permissionDefault },
@@ -133,6 +140,51 @@ export async function makeBackend(
     }).tasks
     state.revision = seed.length
   }
+  const imageLimits = taskImageLimits(undefined),
+    attachmentFiles = new Map()
+  const saveInputImages = (drafts) => {
+    if (!drafts?.length) return []
+    if (drafts.length > imageLimits.maxImages)
+      throw Error(`image-limit: At most ${imageLimits.maxImages} input images are allowed`)
+    const decoded = drafts.map((draft) => decodeDraft(draft, imageLimits))
+    const saved = decoded.map((image) => {
+      const attachmentId = createHash('sha256')
+        .update(image.data)
+        .digest('hex')
+      const ref = {
+        attachmentId,
+        mediaType: image.mediaType,
+        bytes: image.data.length,
+        width: image.width,
+        height: image.height,
+        name: image.name.slice(0, 200),
+      }
+      attachmentFiles.set(attachmentId, {
+        ...ref,
+        data: image.data,
+      })
+      return { ...ref, source: image.source }
+    })
+    return saved
+  }
+  const updateInputImages = (request, task) => {
+    if (request.inputImages === undefined) return undefined
+    const saved = saveInputImages(
+      request.inputImages.filter((item) => !item.keep),
+    )
+    let next = 0
+    return request.inputImages.map((item) => {
+      if (!item.keep) return saved[next++]
+      const recorded = task.inputImages.find(
+        (image) => image.attachmentId === item.attachmentId,
+      )
+      if (!recorded)
+        throw Error(
+          'image-missing: An image retained by this edit is no longer recorded on the task',
+        )
+      return recorded
+    })
+  }
   const board = new BoardController(
     {
       get: () => state,
@@ -146,6 +198,7 @@ export async function makeBackend(
       workspaces: () => workspaces,
       now: Date.now,
       id: () => crypto.randomUUID(),
+      imageLimits: () => imageLimits,
     },
   )
   const task = (id) => board.snapshot().tasks.find((t) => t.id === id)
@@ -200,54 +253,88 @@ export async function makeBackend(
       return id
     },
     running: (id) => running.has(id),
+    readImage: async (image) => {
+      const stored = attachmentFiles.get(image.attachmentId)
+      if (!stored || stored.mediaType !== image.mediaType)
+        throw Error('Stored image is missing or corrupt')
+      return stored.data
+    },
+    imageRoute: async (id) => ({
+      provider: 'lab',
+      model: sessions.get(id)?.imageCapable === false ? 'text-only' : 'image',
+      images: sessions.get(id)?.imageCapable !== false,
+    }),
     idle: async (id) => {
       await jobs.get(id)
     },
-    prompt: async (id, prompt) => {
+    prompt: async (id, content) => {
       if (running.has(id)) throw Error('Session is already running')
       running.add(id)
       sessions.get(id).running = true
+      const prompt = content
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n')
       history.set(id, [...(history.get(id) ?? []), prompt])
       await saveRuntime()
       events.emit('change')
-      const match = prompt.match(/(?:issue|task) ([^,\s]+), version (\d+)/),
-        t = task(match?.[1])
+      const factLine = prompt.match(/^TASK_DATA=(.+)$/m)?.[1],
+        data = factLine ? JSON.parse(factLine) : null,
+        match = prompt.match(/(?:issue|task) ([^,\s]+), version (\d+)/),
+        t = task(data?.taskId ?? match?.[1])
       if (!t) throw Error('Unknown scripted task')
-      const script = scripts[t.id] ?? {}
+      const script = scripts[t.id] ?? {},
+        reminder = /^REPORT_REMINDER: /m.test(prompt),
+        chinese = t.language === 'zh',
+        text = (en, zh) => (chinese ? zh : en)
       const job = Promise.resolve()
         .then(async () => {
-          const phase = prompt.startsWith('Analyze dashboard issue')
-            ? 'analysis'
-            : prompt.startsWith('Review dashboard task')
-              ? 'review'
-              : 'execution'
+          const phase =
+            prompt.match(/PERSE_PHASE=(analysis|execution|review)/)?.[1] ??
+            (prompt.includes('dashboard_triage')
+              ? 'analysis'
+              : prompt.includes('dashboard_review')
+                ? 'review'
+                : 'execution')
           if (script.holdPhase === phase)
             await new Promise((resolve) => gates.set(t.id, resolve))
           if (script.promptFailure) throw Error('Scripted prompt failure')
-          if (prompt.startsWith('Analyze dashboard issue')) {
+          if (phase === 'analysis') {
             if (
               script.missingAnalysis ||
-              (script.missingAnalysisOnce &&
-                !prompt.includes('REPORT_REMINDER'))
+              (script.missingAnalysisOnce && !reminder)
             )
               return
             await board.triage(id, {
               requestId: crypto.randomUUID(),
               taskId: t.id,
               expectedVersion: t.version,
-              criteria: t.criteria.length ? t.criteria : ['Result is verified'],
+              criteria: t.criteria.length
+                ? t.criteria
+                : [text('Result is verified', '结果已通过验证')],
               analysis: {
-                summary: 'Scripted lab analysis; no external model.',
-                plan: ['Inspect scope', 'Implement result', 'Verify criteria'],
+                summary: text(
+                  'Scripted lab analysis; no external model.',
+                  '脚本化 Lab 分析；未调用外部模型。',
+                ),
+                plan: text(
+                  ['Inspect scope', 'Implement result', 'Verify criteria'],
+                  ['检查范围', '实施结果', '验证标准'],
+                ),
                 risk: script.risk ?? 'low',
                 route: script.route ?? 'express',
                 questions:
                   script.route === 'needs-info'
-                    ? ['Which output is required?']
+                    ? [
+                        text(
+                          'Which output is required?',
+                          '需要哪种输出结果？',
+                        ),
+                      ]
                     : [],
               },
             })
-          } else if (prompt.startsWith('Review dashboard task')) {
+          } else if (phase === 'review') {
             if (script.missingReview) return
             await board.submitReview(id, {
               requestId: crypto.randomUUID(),
@@ -260,9 +347,10 @@ export async function makeBackend(
                   .map((_c, criterion) => ({
                     criterion,
                     passed: !script.failedReview,
-                    evidence:
-                      'Lab independent reviewer inspected criterion ' +
-                      criterion,
+                    evidence: text(
+                      'Lab independent reviewer inspected criterion ',
+                      'Lab 独立复核者检查了验收项 ',
+                    ) + criterion,
                   }))
                   .slice(
                     0,
@@ -271,16 +359,23 @@ export async function makeBackend(
                       : t.criteria.length,
                   ),
                 remainingRisks: script.remainingRisk
-                  ? ['Unverified external effect']
+                  ? [
+                      text(
+                        'Unverified external effect',
+                        '存在未验证的外部影响',
+                      ),
+                    ]
                   : [],
-                evidence:
+                evidence: text(
                   'Scripted independent review; native lane separately verifies the actual Agent/tool path.',
+                  '脚本化独立复核；原生链路另行验证真实 Agent/工具路径。',
+                ),
               },
             })
           } else {
             if (
               script.missingReport ||
-              (script.missingReportOnce && !prompt.includes('REPORT_REMINDER'))
+              (script.missingReportOnce && !reminder)
             )
               return
             for (const check of t.completionPolicy.checks) {
@@ -324,8 +419,10 @@ export async function makeBackend(
               expectedVersion: t.version,
               outcome: script.blocked ? 'blocked' : 'review',
               images: script.images ?? [],
-              evidence:
+              evidence: text(
                 'LAB_EXECUTION_EVIDENCE: scripted work completed in isolated workspace.',
+                'LAB_EXECUTION_EVIDENCE：脚本化工作已在隔离工作区完成。',
+              ),
             })
           }
         })
@@ -364,10 +461,16 @@ export async function makeBackend(
           dispatch: true,
           analyze: true,
           verify: true,
+          imageInput: true,
         },
+        imageLimits,
       }
     },
-    create: async (request) => board.create(request),
+    create: async (request) => {
+      const { inputImages: drafts, ...rest } = request
+      const images = saveInputImages(drafts)
+      return board.create({ ...rest, ...(images.length ? { inputImages: images } : {}) })
+    },
     image: async ({ id, path: relative }) => {
       const t = task(id)
       return evidenceImage(
@@ -375,6 +478,14 @@ export async function makeBackend(
         workspaces.find((w) => w.id === t.workspaceId).path,
         relative,
       )
+    },
+    inputImage: async ({ id, attachmentId }) => {
+      const t = task(id)
+      return inputImageDataUrl(t, attachmentId, async (image) => {
+        const stored = attachmentFiles.get(image.attachmentId)
+        if (!stored) throw Error('missing')
+        return { data: stored.data, mediaType: stored.mediaType }
+      })
     },
     update: async (request) => {
       const t = task(request.id)
@@ -386,7 +497,12 @@ export async function makeBackend(
         completion.active(request.id)
       )
         throw Error('busy: Stop the linked native Agent first')
-      return board.update(request)
+      const { inputImages: _requestImages, ...rest } = request
+      const images = t ? updateInputImages(request, t) : undefined
+      return board.update({
+        ...rest,
+        ...(images !== undefined ? { inputImages: images } : {}),
+      })
     },
     dispatch: async (request) =>
       dispatcher.configure(request.workspaceId, request.enabled, request),
@@ -405,6 +521,18 @@ export async function makeBackend(
       })
       const id = await runtime.create(prepared.workspaceId)
       const t = await board.beginAnalysis(id, prepared.id, prepared.version)
+      const refusal = t.inputImages.length
+        ? imageRouteRefusal(t, await runtime.imageRoute(id))
+        : null
+      if (refusal)
+        return board.update({
+          requestId: crypto.randomUUID(),
+          id: t.id,
+          expectedVersion: t.version,
+          action: 'move',
+          status: 'blocked',
+          evidence: refusal,
+        })
       void runPhase(
         board,
         runtime,

@@ -21,14 +21,24 @@ import {
 import { Dispatcher, type DispatchRuntime } from './host/dispatch.ts'
 import { CompletionCoordinator } from './host/completion.ts'
 import { analysisPrompt } from './host/prompts.ts'
-import { runPhase } from './host/phases.ts'
+import { runPhase, imageRouteRefusal } from './host/phases.ts'
 import { evidenceImage } from './host/artifacts.ts'
+import {
+  decodeDraft,
+  inputImageDataUrl,
+  taskImageLimits,
+} from './host/images.ts'
+import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type {
   CreateRequest,
   UpdateRequest,
   DashboardSnapshot,
   DispatchRequest,
   DispatchState,
+  ImageInputLimits,
+  InputImage,
+  InputImageDraft,
+  InputImageUpdate,
   Task,
   TaskCommand,
 } from './contract/types.ts'
@@ -71,6 +81,7 @@ export class DashboardService extends TypertRemoteService {
         this.ctx.workspaceRegistry
           .list()
           .map((w) => ({ id: w.id, path: w.path, sessionIds: w.sessionIds })),
+      imageLimits: () => this.imageInputLimits(),
     })
     const notify = () => {
       for (const fn of this.listeners) fn()
@@ -84,13 +95,13 @@ export class DashboardService extends TypertRemoteService {
             sessionId: `session-${crypto.randomUUID()}` as never,
           })
         ).sessionId,
-      prompt: async (sessionId, text, requestId) => {
+      prompt: async (sessionId, content, requestId) => {
         await this.ctx.sessionController.prompt(
           {
             sessionId: sessionId as never,
             requestId: requestId as never,
             mode: 'queue',
-            content: [{ type: 'text', text }],
+            content,
           },
           new AbortController().signal,
         )
@@ -102,6 +113,63 @@ export class DashboardService extends TypertRemoteService {
       },
       running: (sessionId) =>
         this.ctx.agents.get(sessionId as never)?.status === 'running',
+      readImage: async (image) => {
+        const store = this.attachmentStore()
+        if (!store)
+          throw new Error('DSH attachment capability is unavailable')
+        const stored = await store.readImage({
+          attachmentId: image.attachmentId as never,
+          mediaType: image.mediaType,
+          bytes: image.bytes,
+          width: image.width,
+          height: image.height,
+          name: image.name,
+        })
+        return stored.data
+      },
+      imageRoute: async (sessionId) => {
+        const agent = this.ctx.agents.get(sessionId as never)
+        let provider: string | undefined
+        let model: string | undefined
+        // The durable next/last selection is the route the following request
+        // consumes; agent.options can still name the route of an earlier turn.
+        try {
+          const projections = await this.ctx.sessionController.projections(
+            { sessionId: sessionId as never },
+            new AbortController().signal,
+          )
+          const selection = projections?.values?.modelSelection
+          provider = selection?.next?.provider ?? selection?.lastUsed?.provider
+          model = selection?.next?.model ?? selection?.lastUsed?.model
+        } catch {}
+        provider ??= agent?.options.provider
+        model ??= agent?.options.model
+        if (!provider || !model) return null
+        const llm = this.ctx.get('llm') as
+          | {
+              resolveModelInfo(
+                provider: string,
+                model: string,
+              ): Promise<{
+                inputModalities?: readonly string[]
+              }>
+            }
+          | undefined
+        if (!llm?.resolveModelInfo) return { provider, model, images: null }
+        try {
+          const info = await llm.resolveModelInfo(provider, model)
+          return {
+            provider,
+            model,
+            images:
+              info.inputModalities === undefined
+                ? null
+                : info.inputModalities.includes('image'),
+          }
+        } catch {
+          return { provider, model, images: null }
+        }
+      },
     }
     this.completion = new CompletionCoordinator(
       this.board,
@@ -154,6 +222,78 @@ export class DashboardService extends TypertRemoteService {
       throw error
     }
   }
+  private attachmentStore(): AttachmentStore | undefined {
+    return this.ctx.get('attachments') as AttachmentStore | undefined
+  }
+  private imageInputLimits(): ImageInputLimits {
+    return taskImageLimits(this.attachmentStore()?.imageLimits)
+  }
+  /** Persist create drafts in one batch after validating every member. */
+  private async saveInputImages(
+    drafts: readonly InputImageDraft[] | undefined,
+  ): Promise<InputImage[]> {
+    if (!drafts?.length) return []
+    const store = this.attachmentStore()
+    if (!store)
+      throw new BoardError(
+        'image-unsupported',
+        'This DSH Host has no attachment capability; task input images are unavailable',
+      )
+    const limits = this.imageInputLimits()
+    if (drafts.length > limits.maxImages)
+      throw new BoardError(
+        'image-limit',
+        `At most ${limits.maxImages} input images are allowed`,
+      )
+    const decoded = drafts.map((draft) => decodeDraft(draft, limits))
+    let saved
+    try {
+      saved = await store.saveImages(
+        decoded.map((image) => ({
+          data: image.data,
+          mediaType: image.mediaType,
+          name: image.name,
+        })),
+      )
+    } catch (error) {
+      throw new BoardError(
+        'image-invalid',
+        `Image was refused: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+    return saved.map((ref, index) => ({
+      attachmentId: ref.attachmentId,
+      mediaType: ref.mediaType,
+      bytes: ref.bytes,
+      width: ref.width,
+      height: ref.height,
+      name: (ref.name ?? decoded[index]!.name).slice(0, 200),
+      source: decoded[index]!.source,
+    }))
+  }
+  private async updateInputImages(
+    request: UpdateRequest,
+    task: Task,
+  ): Promise<InputImage[] | undefined> {
+    if (request.inputImages === undefined) return undefined
+    const drafts = request.inputImages.filter(
+      (item): item is InputImageDraft => !('keep' in item),
+    )
+    const saved = await this.saveInputImages(drafts)
+    let next = 0
+    return request.inputImages.map((item: InputImageUpdate) => {
+      if (!('keep' in item)) return saved[next++]!
+      const recorded = task.inputImages.find(
+        (image) => image.attachmentId === item.attachmentId,
+      )
+      if (!recorded)
+        throw new BoardError(
+          'image-missing',
+          'An image retained by this edit is no longer recorded on the task',
+        )
+      return recorded
+    })
+  }
   @Remote
   async snapshot(): Promise<DashboardSnapshot> {
     this.owner()
@@ -167,12 +307,21 @@ export class DashboardService extends TypertRemoteService {
         dispatch: true,
         analyze: true,
         verify: true,
+        imageInput: !!this.attachmentStore(),
       },
+      imageLimits: this.imageInputLimits(),
     }
   }
   @Remote
   async create(request: CreateRequest): Promise<Task> {
-    return this.protect(() => this.board.create(request))
+    return this.protect(async () => {
+      const { inputImages: drafts, ...rest } = request
+      const inputImages = await this.saveInputImages(drafts)
+      return this.board.create({
+        ...rest,
+        ...(inputImages.length ? { inputImages } : {}),
+      })
+    })
   }
   @Remote
   async update(request: UpdateRequest): Promise<Task> {
@@ -197,7 +346,14 @@ export class DashboardService extends TypertRemoteService {
           'busy',
           'Stop the linked Agent before changing task ownership or lifecycle',
         )
-      return this.board.update(request)
+      const inputImages = current
+        ? await this.updateInputImages(request, current)
+        : undefined
+      const { inputImages: _requestImages, ...rest } = request
+      return this.board.update({
+        ...rest,
+        ...(inputImages !== undefined ? { inputImages } : {}),
+      })
     })
   }
   @Remote
@@ -238,6 +394,18 @@ export class DashboardService extends TypertRemoteService {
         prepared.id,
         prepared.version,
       )
+      const refusal = task.inputImages.length
+        ? imageRouteRefusal(task, await this.runtime.imageRoute(id))
+        : null
+      if (refusal)
+        return this.board.update({
+          requestId: crypto.randomUUID(),
+          id: task.id,
+          expectedVersion: task.version,
+          action: 'move',
+          status: 'blocked',
+          evidence: refusal,
+        })
       this.analyses.add(task.id)
       void runPhase(
         this.board,
@@ -304,6 +472,33 @@ export class DashboardService extends TypertRemoteService {
       if (!ws)
         throw new BoardError('workspace-missing', 'Workspace is unavailable')
       return evidenceImage(task, ws.path, request.path)
+    })
+  }
+  @Remote
+  async inputImage(request: {
+    id: string
+    attachmentId: string
+  }): Promise<string> {
+    return this.protect(async () => {
+      const task = this.board.snapshot().tasks.find((t) => t.id === request.id)
+      if (!task) throw new BoardError('not-found', 'Task no longer exists')
+      const store = this.attachmentStore()
+      if (!store)
+        throw new BoardError(
+          'image-unsupported',
+          'This DSH Host has no attachment capability',
+        )
+      return inputImageDataUrl(task, request.attachmentId, async (image) => {
+        const stored = await store.readImage({
+          attachmentId: image.attachmentId as never,
+          mediaType: image.mediaType,
+          bytes: image.bytes,
+          width: image.width,
+          height: image.height,
+          name: image.name,
+        })
+        return { data: stored.data, mediaType: stored.ref.mediaType }
+      })
     })
   }
   @Remote({ mode: 'stream' })

@@ -1,15 +1,33 @@
 /** Event-driven, bounded intake and execution over official DSH Session commands. */
 import { randomUUID } from 'node:crypto'
-import type { DispatchState, Task, DispatchRequest } from '../contract/types.ts'
+import type {
+  DispatchState,
+  Task,
+  DispatchRequest,
+  InputImage,
+} from '../contract/types.ts'
 import { BoardController, BoardError } from './board.ts'
-import { analysisPrompt, taskPrompt } from './prompts.ts'
-import { runPhase } from './phases.ts'
+import { analysisPrompt, taskPrompt, type PromptContentPart } from './prompts.ts'
+import { runPhase, imageRouteRefusal } from './phases.ts'
 export { taskPrompt } from './prompts.ts'
+export interface ImageRoute {
+  provider: string
+  model: string
+  images: boolean | null
+}
 export interface DispatchRuntime {
   create(workspaceId: string): Promise<string>
-  prompt(sessionId: string, prompt: string, requestId: string): Promise<void>
+  prompt(
+    sessionId: string,
+    content: readonly PromptContentPart[],
+    requestId: string,
+  ): Promise<void>
   idle(sessionId: string): Promise<void>
   running(sessionId: string): boolean
+  /** Read one recorded task image for the ordered phase prompt. */
+  readImage(image: InputImage): Promise<Uint8Array>
+  /** Resolve the exact Session route's declared image capability. */
+  imageRoute(sessionId: string): Promise<ImageRoute | null>
 }
 export class Dispatcher {
   private state: DispatchState = {
@@ -151,15 +169,75 @@ export class Dispatcher {
           activeSessionId: sessionId,
         }
         this.changed()
-        await runPhase(
-          this.board,
-          this.runtime,
-          claimed,
-          sessionId,
-          analyzing ? 'analysis' : 'execution',
-          analyzing ? analysisPrompt(claimed) : taskPrompt(claimed),
-          () => this.closed,
-        )
+        const refusal = claimed.inputImages.length
+          ? imageRouteRefusal(
+              claimed,
+              await this.runtime.imageRoute(sessionId),
+            )
+          : null
+        if (refusal) {
+          const latest = this.board
+            .snapshot()
+            .tasks.find((t) => t.id === claimed.id)
+          if (latest?.version === claimed.version)
+            await this.board.update({
+              requestId: randomUUID(),
+              id: claimed.id,
+              expectedVersion: claimed.version,
+              action: 'move',
+              status: 'blocked',
+              evidence: refusal,
+            })
+          // A route capability omission is task-local; later issues remain eligible.
+          this.state = {
+            ...this.state,
+            activeTaskId: null,
+            activeSessionId: null,
+          }
+          this.changed()
+          continue
+        }
+        try {
+          await runPhase(
+            this.board,
+            this.runtime,
+            claimed,
+            sessionId,
+            analyzing ? 'analysis' : 'execution',
+            analyzing ? analysisPrompt(claimed) : taskPrompt(claimed),
+            () => this.closed,
+          )
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error)
+          // The route guard should catch this first. If admission still refuses
+          // images, treat it as task-local rather than pausing all dispatch.
+          if (
+            claimed.inputImages.length &&
+            /image input|does not support image|image-capable/i.test(message)
+          ) {
+            const latest = this.board
+              .snapshot()
+              .tasks.find((t) => t.id === claimed.id)
+            if (latest?.version === claimed.version)
+              await this.board.update({
+                requestId: randomUUID(),
+                id: claimed.id,
+                expectedVersion: claimed.version,
+                action: 'move',
+                status: 'blocked',
+                evidence: `Image input is unsupported by the selected model route: ${message} Images were not silently dropped. Select an image-capable model and retry the task.`,
+              })
+            this.state = {
+              ...this.state,
+              activeTaskId: null,
+              activeSessionId: null,
+            }
+            this.changed()
+            continue
+          }
+          throw error
+        }
         if (this.closed) break
         const current = this.board
           .snapshot()

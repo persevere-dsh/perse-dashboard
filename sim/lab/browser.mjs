@@ -52,6 +52,25 @@ async function openTask(id) {
     .filter({ hasText: (await task(id)).title })
     .click()
 }
+const labImage = async (name) =>
+  (await readFile(new URL(`../fixtures/input-images/${name}`, import.meta.url))).toString('base64')
+async function pasteLabImage(locator, name, type) {
+  await locator.evaluate(
+    (element, image) => {
+      const bytes = Uint8Array.from(atob(image.base64), (c) => c.charCodeAt(0))
+      const transfer = new DataTransfer()
+      transfer.items.add(new File([bytes], image.name, { type: image.type }))
+      element.dispatchEvent(
+        new ClipboardEvent('paste', {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: transfer,
+        }),
+      )
+    },
+    { name, type, base64: await labImage(name) },
+  )
+}
 async function choose(id) {
   await closeDetail()
   await page.getByLabel('Lab scenario', { exact: true }).selectOption(id)
@@ -182,6 +201,59 @@ try {
         .at(-1)
         .assertions.push(
           'Empty board supports real create and subsequent detail',
+        )
+    } else if (id === 'language') {
+      const english = await create('English intake expectation', {
+        mode: 'manual',
+        intake: true,
+      })
+      expect(english.language).toBe('en')
+      expect(english.description).toContain(
+        'Acceptance expectations supplied by owner:',
+      )
+      await closeDetail()
+      await page.getByLabel('Language', { exact: true }).selectOption('zh')
+      await expect(
+        page.getByRole('button', { name: '新建任务', exact: true }),
+      ).toBeVisible()
+      await page.getByRole('button', { name: '新建任务', exact: true }).click()
+      const chineseForm = page.locator('form.pd-create')
+      await chineseForm
+        .getByLabel('标题', { exact: true })
+        .fill('中文语言任务')
+      await chineseForm
+        .getByLabel('任务说明', { exact: true })
+        .fill('验证中文界面与任务语言')
+      await chineseForm
+        .getByLabel('验收标准（可选）', { exact: true })
+        .fill('中文验收期望标记已追加')
+      await chineseForm
+        .getByRole('button', { name: '创建任务', exact: true })
+        .click()
+      const chinese = (await data()).snapshot.tasks.find(
+        (t) => t.title === '中文语言任务',
+      )
+      expect(chinese.language).toBe('zh')
+      expect(chinese.description).toContain('所有者补充的验收期望：')
+      expect(chinese.description).not.toContain(
+        'Acceptance expectations supplied by owner:',
+      )
+      await expect(
+        page.getByRole('dialog', { name: '中文语言任务', exact: true }),
+      ).toContainText('所有者补充的验收期望：')
+      await page.screenshot({
+        path: path.join(run, 'language-zh-intake.png'),
+        fullPage: true,
+      })
+      await closeDetail()
+      await page.getByLabel('Language', { exact: true }).selectOption('en')
+      await expect(
+        page.getByRole('button', { name: 'New task', exact: true }),
+      ).toBeVisible()
+      results
+        .at(-1)
+        .assertions.push(
+          'English UI keeps the English intake marker while zh UI persists zh with a Chinese marker; the English interface does not regress',
         )
     } else if (id === 'filtered-empty') {
       await page.getByRole('searchbox').fill('absent-fixture')
@@ -1217,6 +1289,26 @@ try {
         .poll(async () => (await task(staged.id)).automationNote)
         .toBe('human-acceptance-required')
       expect((await task(staged.id)).reviewSessionId).toBe(reviewer)
+      await page
+        .getByLabel('Language', { exact: true })
+        .selectOption('zh')
+      await expect(page.locator('.pd-next-detail')).toContainText(
+        '独立核验已收集证据',
+      )
+      await expect(page.locator('.pd-next-detail')).not.toContainText(
+        'Independent evidence is available',
+      )
+      await page
+        .getByLabel('Language', { exact: true })
+        .selectOption('en')
+      await expect(
+        page.getByRole('button', { name: 'Close details', exact: true }),
+      ).toBeVisible()
+      results
+        .at(-1)
+        .assertions.push(
+          'Human acceptance machine note renders as Chinese in task detail without changing the stored token',
+        )
       await page.screenshot({
         path: path.join(run, 'workflow-staged-evidence.png'),
         fullPage: true,
@@ -1251,6 +1343,113 @@ try {
         .at(-1)
         .assertions.push(
           'Missing reports are bounded and isolated; owner recovery resumes; staged review collects image evidence without auto-acceptance; preview and criterion editing work',
+        )
+    } else if (id === 'input-images') {
+      await closeDetail()
+      await page
+        .getByRole('combobox', { name: 'All workspaces', exact: true })
+        .selectOption('alpha')
+      await page.getByRole('button', { name: 'New task', exact: true }).click()
+      const form = page.locator('form.pd-create'),
+        description = form.getByLabel('Description', { exact: true }),
+        criteria = form.getByLabel('Acceptance criteria (optional)', {
+          exact: true,
+        }),
+        descriptionImages = form.locator(
+          '.pd-input-images[data-source=description]',
+        ),
+        criteriaImages = form.locator(
+          '.pd-input-images[data-source=criteria]',
+        )
+      await form.getByLabel('Title', { exact: true }).fill('Image input lab task')
+      await description.fill('Lab image input across all phases')
+      await criteria.fill('Every phase receives the ordered lab fixture')
+      await pasteLabImage(description, 'fixture-description.png', 'image/png')
+      await pasteLabImage(criteria, 'fixture-criteria.jpg', 'image/jpeg')
+      await expect(descriptionImages.locator('.pd-input-image')).toHaveCount(1)
+      await expect(criteriaImages.locator('.pd-input-image')).toHaveCount(1)
+      await expect(descriptionImages).toContainText('Task description')
+      await expect(descriptionImages).toContainText('87 B')
+      await expect(criteriaImages).toContainText('Acceptance criteria')
+      await expect(criteriaImages).toContainText('650 B')
+      await expect(form.locator('.pd-input-image img')).toHaveCount(2)
+      await form.screenshot({
+        path: path.join(run, 'input-images-form.png'),
+      })
+      await form
+        .getByRole('button', { name: 'Create task', exact: true })
+        .click()
+      await expect
+        .poll(async () =>
+          (await data()).snapshot.tasks.some(
+            (t) => t.title === 'Image input lab task',
+          ),
+        )
+        .toBe(true)
+      const created = (await data()).snapshot.tasks.find(
+        (t) => t.title === 'Image input lab task',
+      )
+      expect(created.inputImages).toHaveLength(2)
+      expect(created.inputImages.map((i) => i.source)).toEqual([
+        'description',
+        'criteria',
+      ])
+      const gallery = page.locator('.pd-input-image-gallery')
+      await expect(gallery.locator('.pd-input-image')).toHaveCount(2)
+      await expect
+        .poll(() =>
+          gallery
+            .locator('img')
+            .evaluateAll((images) => images.map((img) => img.naturalWidth)),
+        )
+        .toEqual([12, 12])
+      await page
+        .getByRole('tab', { name: 'Properties & rules', exact: true })
+        .click()
+      await page.getByText('Edit task', { exact: true }).click()
+      const editor = page.locator('.pd-detail details').filter({
+        hasText: 'Edit task',
+      })
+      const editorDescription = editor.locator(
+        '.pd-input-images[data-source=description]',
+      )
+      await expect(editorDescription.locator('.pd-input-image')).toHaveCount(1)
+      await pasteLabImage(
+        editor.locator('.pd-field textarea').first(),
+        'fixture-extra.webp',
+        'image/webp',
+      )
+      await expect(editorDescription.locator('.pd-input-image')).toHaveCount(2)
+      await editor
+        .locator('.pd-input-images[data-source=criteria]')
+        .getByRole('button', {
+          name: 'Remove image: fixture-criteria.jpg',
+          exact: true,
+        })
+        .click()
+      await editor.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect
+        .poll(async () => (await task(created.id)).inputImages.length)
+        .toBe(2)
+      expect((await task(created.id)).inputImages.map((i) => i.name)).toEqual([
+        'fixture-description.png',
+        'fixture-extra.webp',
+      ])
+      await page.reload()
+      await openTask(created.id)
+      await expect(page.locator('.pd-input-image-gallery .pd-input-image')).toHaveCount(
+        2,
+      )
+      await closeDetail()
+      await page
+        .getByRole('combobox', { name: 'All workspaces', exact: true })
+        .selectOption('alpha')
+      await queue(created.id, 'done')
+      expect((await task(created.id)).completion.kind).toBe('reviewed')
+      results
+        .at(-1)
+        .assertions.push(
+          'Create and edit accept pasted PNG/JPEG/WebP with source labels and byte sizes; saved previews survive reload; image task completes analysis, execution and review',
         )
     } else if (id === 'recovery') {
       const completed = await create('Sessions survive recovery')

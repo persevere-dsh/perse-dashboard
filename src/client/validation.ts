@@ -19,6 +19,17 @@ const schema = z.object({
   ),
   dispatch: z.object({ enabled: z.boolean(), error: z.string().nullable() }),
   capabilities: z.record(z.string(), z.boolean()).optional(),
+  imageLimits: z
+    .object({
+      maxImages: z.number().int().min(1).max(4),
+      maxImageBytes: z.number().int().positive(),
+      maxImagePixels: z.number().int().positive(),
+      maxImageDimension: z.number().int().positive(),
+      mediaTypes: z.array(
+        z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif']),
+      ),
+    })
+    .optional(),
   tasks: z.array(
     z
       .object({
@@ -39,6 +50,26 @@ const schema = z.object({
           )
           .max(12)
           .optional(),
+        inputImages: z
+          .array(
+            z.object({
+              attachmentId: z.string(),
+              mediaType: z.enum([
+                'image/png',
+                'image/jpeg',
+                'image/webp',
+                'image/gif',
+              ]),
+              bytes: z.number().int().positive(),
+              width: z.number().int().positive(),
+              height: z.number().int().positive(),
+              name: z.string(),
+              source: z.enum(['description', 'criteria']),
+            }),
+          )
+          .max(4)
+          .optional(),
+        language: z.enum(['zh', 'en']).nullable().optional(),
         priority: z.number().int().min(0).max(2),
         assignee: z.string().nullable(),
         sessionId: z.string().nullable(),
