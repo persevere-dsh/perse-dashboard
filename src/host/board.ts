@@ -14,6 +14,7 @@ import type {
   InputImage,
   LaneRequest,
   BoardWorkspaceSettings,
+  RepairPolicyRequest,
 } from '../contract/types.ts'
 import { reviewPrompt } from './prompts.ts'
 import { detectTaskLanguage } from '../contract/language.ts'
@@ -62,6 +63,11 @@ export const inputImageSchema = z.strictObject({
   source: z.enum(['description', 'criteria']),
 })
 const inputImagesSchema = z.array(inputImageSchema).max(4).optional()
+const ownerAnswerSchema = z.strictObject({
+  question: z.string().trim().min(1).max(1000),
+  answer: z.string().trim().min(1).max(12000),
+})
+const ownerAnswersSchema = z.array(ownerAnswerSchema).max(20)
 const status = z.enum([
   'triage',
   'needs-info',
@@ -96,6 +102,7 @@ export const taskSchema = z.object({
   needsManual: z.boolean().default(false),
   analysisSessionId: z.string().nullable().default(null),
   analysis: storedAnalysisSchema.nullable().default(null),
+  answers: ownerAnswersSchema.default([]),
   reviewSessionId: z.string().nullable().default(null),
   reviewPromptHash: z.string().nullable().default(null),
   review: reviewSchema.nullable().default(null),
@@ -199,6 +206,7 @@ export const updateSchema = z.strictObject({
   inputImages: inputImagesSchema,
   dependencies: z.array(z.string().min(1).max(150)).max(20).optional(),
   resourceKeys: z.array(z.string().max(128)).max(8).optional(),
+  answers: ownerAnswersSchema.optional(),
 })
 export class BoardError extends Error {
   constructor(
@@ -532,6 +540,7 @@ export class BoardController {
           needsManual: r.needsManual ?? false,
           analysisSessionId: null,
           analysis: null,
+          answers: [],
           reviewSessionId: null,
           reviewPromptHash: null,
           review: null,
@@ -595,6 +604,15 @@ export class BoardController {
         if (r.needsManual !== undefined) task.needsManual = r.needsManual
         if (r.inputImages !== undefined)
           task.inputImages = structuredClone(r.inputImages)
+        if (r.answers !== undefined) {
+          task.answers = structuredClone(r.answers)
+          // The old criteria were generated before these answers; let the
+          // fresh analysis rebuild them unless the edit carries new criteria.
+          if (r.criteria === undefined) {
+            task.criteria = []
+            task.checked = []
+          }
+        }
         if (r.dependencies !== undefined) {
           const problem = dependenciesProblem(
             old.id,
@@ -626,6 +644,8 @@ export class BoardController {
           r.description !== undefined ||
           r.completionPolicy !== undefined ||
           r.needsManual !== undefined ||
+          (r.answers !== undefined &&
+            JSON.stringify(task.answers) !== JSON.stringify(old.answers)) ||
           (r.inputImages !== undefined &&
             JSON.stringify(r.inputImages) !== JSON.stringify(old.inputImages)) ||
           (r.dependencies !== undefined &&
@@ -1143,6 +1163,43 @@ export class BoardController {
         task: {
           ...old,
           review: r.review,
+          version: old.version + 1,
+          updatedAt: this.env.now(),
+        },
+      }
+    })
+  }
+  /**
+   * Owner repair of an in-review completion policy. It clears only the
+   * completion/review result; execution evidence and the claimed Session stay
+   * intact, so the coordinator can re-verify without repeating side effects.
+   */
+  repairPolicy(raw: RepairPolicyRequest) {
+    return this.mutate(raw, 'human', (b) => {
+      const old = b.tasks.find((t) => t.id === raw.id)
+      if (!old || old.version !== raw.expectedVersion)
+        throw new BoardError('conflict', 'Task changed')
+      if (old.status !== 'in-review' || old.archived)
+        throw new BoardError(
+          'invalid-transition',
+          'Only active review tasks may repair their completion policy',
+        )
+      const policyProblem = completionPolicyProblem(
+        raw.completionPolicy,
+        old.criteria,
+      )
+      if (policyProblem)
+        throw new BoardError('policy-incomplete', policyProblem)
+      return {
+        action: 'repair-policy',
+        task: {
+          ...old,
+          completionPolicy: raw.completionPolicy,
+          completion: null,
+          review: null,
+          reviewPromptHash: null,
+          reviewSessionId: null,
+          automationNote: '',
           version: old.version + 1,
           updatedAt: this.env.now(),
         },

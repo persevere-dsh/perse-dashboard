@@ -66,6 +66,16 @@ export function normalizeDescription(
   if (language !== 'zh') return description
   return description.split(OWNER_EXPECTATIONS_EN).join(OWNER_EXPECTATIONS_ZH)
 }
+/**
+ * Detect historical generated text that is Latin-dominant while the task is
+ * Chinese. Display-only: it never changes stored analysis, evidence or review.
+ */
+export function looksLatinDominant(text: string): boolean {
+  if (typeof text !== 'string') return false
+  const han = count(text, HAN)
+  const latin = count(text, LATIN)
+  return latin >= 20 && han * 4 < latin
+}
 /** Localized description used for rendering and prompt facts; never mutates the task. */
 export function taskDescription(task: {
   language?: TaskLanguage | null

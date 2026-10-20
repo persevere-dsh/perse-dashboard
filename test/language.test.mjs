@@ -4,6 +4,7 @@ import {
   OWNER_EXPECTATIONS_EN,
   OWNER_EXPECTATIONS_ZH,
   detectTaskLanguage,
+  looksLatinDominant,
   normalizeDescription,
   resolveTaskLanguage,
   taskDescription,
@@ -463,4 +464,19 @@ test('opening a legacy task does not rewrite it; the next owner edit persists Ch
   assert.ok(!saved.description.includes(OWNER_EXPECTATIONS_EN))
   assert.equal(saved.language, null)
   assert.match(analysisPrompt(saved), /分析看板议题/)
+})
+
+
+test('historical Latin-dominant text is detected without changing the stored text', () => {
+  assert.equal(
+    looksLatinDominant(
+      'Implemented task-language consistency across contract, Host prompts, Client and simulators; all requested checks are verified.',
+    ),
+    true,
+  )
+  assert.equal(
+    looksLatinDominant('已在契约、Host 提示词、客户端与模拟器中完成任务语言一致性。'),
+    false,
+  )
+  assert.equal(looksLatinDominant('short English'), false)
 })

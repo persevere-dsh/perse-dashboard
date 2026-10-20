@@ -112,6 +112,11 @@ export interface ImageInputLimits {
   maxImageDimension: number
   mediaTypes: ImageMediaType[]
 }
+/** Owner answer to one analysis question; persisted across re-analysis. */
+export interface OwnerAnswer {
+  question: string
+  answer: string
+}
 export interface Task {
   id: string
   workspaceId: string
@@ -122,6 +127,8 @@ export interface Task {
   evidence: string
   images: EvidenceImage[]
   inputImages: InputImage[]
+  /** Additive owner Q/A from a needs-info analysis; [] on legacy tasks. */
+  answers: OwnerAnswer[]
   /** Additive field: null/absent on legacy tasks means infer from content. */
   language: TaskLanguage | null
   /** Owner-declared task dependencies in the same workspace; [] on legacy tasks. */
@@ -217,6 +224,7 @@ export interface UpdateRequest {
   inputImages?: InputImageUpdate[]
   dependencies?: string[]
   resourceKeys?: string[]
+  answers?: OwnerAnswer[]
 }
 export interface AgentRequest {
   requestId: string
@@ -243,6 +251,10 @@ export interface TaskCommand {
   requestId: string
   id: string
   expectedVersion: number
+}
+/** Owner-only repair of an in-review completion policy; never re-executes. */
+export interface RepairPolicyRequest extends TaskCommand {
+  completionPolicy: CompletionPolicy
 }
 export interface DispatchRequest {
   workspaceId: string

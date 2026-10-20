@@ -50,9 +50,11 @@ import type {
   PermissionApplyPreviewRequest,
   PermissionApplyRequest,
   PermissionApplyResult,
+  RepairPolicyRequest,
   Task,
   TaskCommand,
 } from './contract/types.ts'
+import { completionPolicySchema } from './host/policy.ts'
 declare module '@deepseek-ai/cordis' {
   interface Context {
     perseDashboard: DashboardService
@@ -71,6 +73,9 @@ const taskCommandSchema = z.strictObject({
   requestId: z.string().min(1).max(150),
   id: z.string(),
   expectedVersion: z.number().int().positive(),
+})
+const repairPolicySchema = taskCommandSchema.extend({
+  completionPolicy: completionPolicySchema,
 })
 const spec = defineDomain({
   name: 'perse_dashboard',
@@ -548,6 +553,36 @@ export class DashboardService extends TypertRemoteService {
           'Only active review tasks may be verified',
         )
       return this.completion.finish(task.id)
+    })
+  }
+  @Remote
+  async repairPolicy(request: RepairPolicyRequest): Promise<Task> {
+    return this.protect(async () => {
+      const command = repairPolicySchema.parse(request)
+      const task = this.board
+        .snapshot()
+        .tasks.find((t) => t.id === command.id)
+      if (!task || task.version !== command.expectedVersion)
+        throw new BoardError('conflict', 'Task changed')
+      if (task.status !== 'in-review' || task.archived)
+        throw new BoardError(
+          'invalid-transition',
+          'Only active review tasks may repair their completion policy',
+        )
+      if (
+        [task.sessionId, task.analysisSessionId, task.reviewSessionId].some(
+          (id) => id && this.runtime.running(id),
+        )
+      )
+        throw new BoardError(
+          'busy',
+          'Stop the linked Agent before repairing the completion policy',
+        )
+      const repaired = await this.board.repairPolicy({
+        ...command,
+        completionPolicy: command.completionPolicy,
+      })
+      return this.completion.finish(repaired.id)
     })
   }
   @Remote

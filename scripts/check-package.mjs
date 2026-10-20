@@ -15,7 +15,7 @@ assert.ok(!bundle.includes('node:fs'))
 assert.ok(!bundle.includes('setBypassCSP'))
 assert.equal(pkg.name, 'perse-dashboard')
 const remote = await import('../lib/typert.remote-client.js')
-assert.equal(remote.default.descriptors.length, 12)
+assert.equal(remote.default.descriptors.length, 13)
 assert.deepEqual(
   remote.default.descriptors.map((d) => d.name ?? d.method).sort(),
   [
@@ -26,6 +26,7 @@ assert.deepEqual(
     'inputImage',
     'permissionApply',
     'permissionPreview',
+    'repairPolicy',
     'setAutomationLanes',
     'snapshot',
     'update',

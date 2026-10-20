@@ -16,7 +16,15 @@ export const en = {
   nextRunning:
     'The linked Agent is working. Open its Session to follow progress.',
   nextClarify:
-    'Answer the analysis questions in Properties, save, then Analyze issue again.',
+    'Answer the analysis questions below and save; the task is re-analyzed automatically.',
+  ownerAnswers: 'Answer analysis questions',
+  ownerAnswersHelp:
+    'Saving answers clears the old acceptance criteria and re-analyzes the task. The questions and answers stay recorded.',
+  ownerAnswerPlaceholder: 'Your answer',
+  ownerAnswersSave: 'Save answers and re-analyze',
+  ownerAnswersSaved: 'Owner answers',
+  legacyOriginalLanguage:
+    'Some historical analysis, evidence or review text was generated in English before task-language support. It is kept verbatim and is not translated automatically.',
   nextBlocked:
     'Inspect the phase Session and evidence. Retry returns unfinished work to the correct queue.',
   nextInterrupted:
@@ -246,6 +254,10 @@ export const en = {
   reviewed: 'Automatic after independent review',
   completionHelp:
     'Automatic completion requires express, low risk, complete evidence and all gates. Manual flags and staged work retain owner acceptance.',
+  repairPolicy: 'Repair completion policy',
+  repairPolicyHelp:
+    'Update the policy and re-run verification or independent review without repeating execution. Existing evidence is kept.',
+  repairPolicySave: 'Save and re-verify',
   completionInstructions: 'Completion rule instructions',
   machineChecks: 'Machine checks',
   checksHelp:
@@ -386,7 +398,15 @@ export const zh: Record<Key, string> = {
   nextArchived: '此任务已归档，恢复后才能继续。',
   nextDone: '已完成，验收凭据已记录。',
   nextRunning: '关联 Agent 正在运行，可打开会话查看进度。',
-  nextClarify: '在“属性”中补充问题答案并保存，再点击“分析议题”。',
+  nextClarify: '在下方回答分析问题并保存，任务会自动重新分析。',
+  ownerAnswers: '回答分析问题',
+  ownerAnswersHelp:
+    '保存回答会清空旧验收标准并重新分析任务；问题与回答会保留记录。',
+  ownerAnswerPlaceholder: '输入回答',
+  ownerAnswersSave: '保存回答并重新分析',
+  ownerAnswersSaved: '所有者回答',
+  legacyOriginalLanguage:
+    '部分历史分析、证据或复核内容是在任务语言支持之前用英文生成的；按原文保留，不会自动翻译。',
   nextBlocked: '查看阶段会话与阻塞原因；“恢复任务”会将未完成工作退回正确阶段。',
   nextInterrupted:
     '阶段尚未完成，但 Agent 已空闲。先查看会话，再恢复任务；系统不会静默重跑。',
@@ -594,6 +614,10 @@ export const zh: Record<Key, string> = {
   reviewed: '独立复核通过后自动完成',
   completionHelp:
     '自动完成要求低风险、express 路由、完整证据及全部验证通过；人工标记和 staged 任务仍需人工验收。',
+  repairPolicy: '修复完成策略',
+  repairPolicyHelp:
+    '只更新完成策略并重新验证或独立复核，不重跑执行；现有证据保留。',
+  repairPolicySave: '保存并重新验证',
   completionInstructions: '完成规则提示词',
   machineChecks: '机器验证规则',
   checksHelp:

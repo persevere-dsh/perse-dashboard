@@ -22,6 +22,7 @@ import type { createDashboardStore } from './store.ts'
 import type { Key } from './locales.ts'
 import { automationNoteText } from './notes.ts'
 import {
+  looksLatinDominant,
   normalizeDescription,
   resolveTaskLanguage,
 } from '../contract/language.ts'
@@ -54,6 +55,8 @@ import {
 import type {
   CompletionPolicy,
   ImageInputLimits,
+  OwnerAnswer,
+  RepairPolicyRequest,
   TaskCommand,
   DashboardSnapshot,
 } from '../contract/types.ts'
@@ -65,6 +68,7 @@ export interface Injected extends PermissionControls {
   dispatch(r: DispatchRequest): Promise<DispatchState>
   analyze(r: TaskCommand): Promise<Task>
   verify(r: TaskCommand): Promise<Task>
+  repairPolicy(r: RepairPolicyRequest): Promise<Task>
   setAutomationLanes(
     r: LaneRequest,
   ): Promise<{ workspaceId: string; lanes: number; revision: number }>
@@ -254,6 +258,12 @@ export function Dashboard(props: Props) {
     return sum + (u ? Object.values(u).reduce((a, b) => a + b, 0) : 0)
   }, 0)
   const detailCoordination = task ? coordinationFor(task) : undefined
+  const legacyOriginalLanguage =
+    !!task &&
+    resolveTaskLanguage(task) === 'zh' &&
+    [task.analysis?.summary, task.evidence, task.review?.evidence].some(
+      (text) => typeof text === 'string' && looksLatinDominant(text),
+    )
   const linkedRunning =
     !!task &&
     [task.sessionId, task.analysisSessionId, task.reviewSessionId].some(
@@ -1120,6 +1130,30 @@ export function Dashboard(props: Props) {
                 ),
               )}
             </p>
+            {task.status === 'needs-info' && (
+              <OwnerAnswersForm
+                key={`answers:${task.id}:${task.version}`}
+                task={task}
+                t={t}
+                disabled={busy || linkedRunning || !commandsAvailable}
+                submit={(answers) => {
+                  void act(async () => {
+                    const updated = await props.update({
+                      requestId: crypto.randomUUID(),
+                      id: task.id,
+                      expectedVersion: task.version,
+                      action: 'edit',
+                      answers,
+                    })
+                    await props.analyze({
+                      requestId: crypto.randomUUID(),
+                      id: updated.id,
+                      expectedVersion: updated.version,
+                    })
+                  })
+                }}
+              />
+            )}
             {task.status === 'in-review' && (
               <>
                 <h4>{t('completionGates')}</h4>
@@ -1316,6 +1350,17 @@ export function Dashboard(props: Props) {
               </p>
               <InputImageGallery task={task} load={props.inputImage} t={t} />
             </section>
+            {task.answers.length > 0 && (
+              <section className="pd-section">
+                <h3>{t('ownerAnswersSaved')}</h3>
+                {task.answers.map((answer, index) => (
+                  <div key={index} className="pd-owner-answer">
+                    <p className="pd-muted">{answer.question}</p>
+                    <p style={{ whiteSpace: 'pre-wrap' }}>{answer.answer}</p>
+                  </div>
+                ))}
+              </section>
+            )}
             <section className="pd-section">
               <h3>
                 {t('criteriaProgress')}{' '}
@@ -1397,6 +1442,9 @@ export function Dashboard(props: Props) {
             hidden={detailTab !== 'analysis'}
           >
             {' '}
+            {legacyOriginalLanguage && (
+              <p className="pd-muted">{t('legacyOriginalLanguage')}</p>
+            )}
             {task.analysis && (
               <section aria-label={t('analysis')}>
                 <h3>{t('analysis')}</h3>
@@ -1550,6 +1598,24 @@ export function Dashboard(props: Props) {
                   </p>
                 ))}
               </details>
+            )}
+            {task.status === 'in-review' && !task.archived && (
+              <RepairPolicyForm
+                key={`repair:${task.id}:${task.version}`}
+                task={task}
+                t={t}
+                disabled={busy || linkedRunning || !commandsAvailable}
+                save={(policy) => {
+                  void act(() =>
+                    props.repairPolicy({
+                      requestId: crypto.randomUUID(),
+                      id: task.id,
+                      expectedVersion: task.version,
+                      completionPolicy: policy,
+                    }),
+                  )
+                }}
+              />
             )}
             {['todo', 'triage', 'needs-info', 'blocked'].includes(
               task.status,
@@ -2291,6 +2357,97 @@ const editable = (task: Task): EditableTask => ({
   },
   needsManual: task.needsManual ?? false,
 })
+function OwnerAnswersForm({
+  task,
+  t,
+  disabled,
+  submit,
+}: {
+  task: Task
+  t: Injected['t']
+  disabled: boolean
+  submit: (answers: OwnerAnswer[]) => void
+}) {
+  const questions = task.analysis?.questions ?? []
+  const saved = new Map(task.answers.map((answer) => [answer.question, answer.answer]))
+  const [draft, setDraft] = useState<Record<string, string>>(() =>
+    Object.fromEntries(questions.map((question) => [question, saved.get(question) ?? ''])),
+  )
+  if (!questions.length) return null
+  const answers: OwnerAnswer[] = questions.map((question) => ({
+    question,
+    answer: (draft[question] ?? '').trim(),
+  }))
+  const ready = answers.every((answer) => answer.answer.length > 0)
+  return (
+    <details className="pd-policy pd-owner-answers" open>
+      <summary>{t('ownerAnswers')}</summary>
+      <p className="pd-muted">{t('ownerAnswersHelp')}</p>
+      {questions.map((question, index) => (
+        <label className="pd-field" key={index}>
+          <span>{question}</span>
+          <textarea
+            value={draft[question] ?? ''}
+            disabled={disabled}
+            placeholder={t('ownerAnswerPlaceholder')}
+            onChange={(e) =>
+              setDraft((old) => ({ ...old, [question]: e.target.value }))
+            }
+          />
+        </label>
+      ))}
+      <div className="pd-actions">
+        <button
+          className="pd-primary"
+          disabled={disabled || !ready}
+          onClick={() => submit(answers)}
+        >
+          {t('ownerAnswersSave')}
+        </button>
+      </div>
+    </details>
+  )
+}
+function RepairPolicyForm({
+  task,
+  t,
+  disabled,
+  save,
+}: {
+  task: Task
+  t: Injected['t']
+  disabled: boolean
+  save: (policy: CompletionPolicy) => void
+}) {
+  const [policy, setPolicy] = useState<CompletionPolicy>(
+    task.completionPolicy ?? {
+      mode: 'manual',
+      instructions: '',
+      checks: [],
+    },
+  )
+  return (
+    <details className="pd-policy pd-repair-policy">
+      <summary>{t('repairPolicy')}</summary>
+      <p className="pd-muted">{t('repairPolicyHelp')}</p>
+      <CompletionEditor
+        value={policy}
+        change={setPolicy}
+        t={t}
+        disabled={disabled}
+      />
+      <div className="pd-actions">
+        <button
+          className="pd-primary"
+          disabled={disabled}
+          onClick={() => save(policy)}
+        >
+          {t('repairPolicySave')}
+        </button>
+      </div>
+    </details>
+  )
+}
 function TaskEditor({
   task,
   tasks,

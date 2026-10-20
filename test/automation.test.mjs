@@ -383,3 +383,57 @@ test('verified completion policy must cover every criterion when written', () =>
     assert.equal(edited.completionPolicy.checks.length, 2)
     assert.equal(edited.status, 'triage')
   }))
+
+test('an in-review completion policy can be repaired and re-verified without re-execution', () =>
+  harness(async (b) => {
+    let t = await b.owner.create(issue({ needsManual: true }))
+    t = await execute(b, t)
+    assert.equal(t.status, 'in-review')
+    const executionSession = t.sessionId
+    const repaired = await b.board.repairPolicy({
+      requestId: crypto.randomUUID(),
+      id: t.id,
+      expectedVersion: t.version,
+      completionPolicy: policy('reviewed'),
+    })
+    assert.equal(repaired.status, 'in-review')
+    assert.equal(repaired.completionPolicy.mode, 'reviewed')
+    assert.equal(repaired.sessionId, executionSession)
+    assert.equal(repaired.reviewSessionId, null)
+    assert.equal(repaired.review, null)
+    assert.equal(repaired.completion, null)
+    const reviewed = await b.owner.verify({
+      requestId: crypto.randomUUID(),
+      id: repaired.id,
+      expectedVersion: repaired.version,
+    })
+    assert.ok(reviewed.reviewSessionId)
+    assert.notEqual(reviewed.reviewSessionId, reviewed.sessionId)
+    assert.equal(reviewed.status, 'in-review')
+    assert.equal(reviewed.completion, null)
+  }))
+
+test('completion policy repair stays inside in-review and rejects an unsatisfiable verified policy', () =>
+  harness(async (b) => {
+    let held = await b.owner.create(issue({ needsManual: true }))
+    held = await execute(b, held)
+    await assert.rejects(
+      b.board.repairPolicy({
+        requestId: crypto.randomUUID(),
+        id: held.id,
+        expectedVersion: held.version,
+        completionPolicy: { mode: 'verified', instructions: '', checks: [] },
+      }),
+      /machine check/,
+    )
+    const todo = await b.owner.create(issue())
+    await assert.rejects(
+      b.board.repairPolicy({
+        requestId: crypto.randomUUID(),
+        id: todo.id,
+        expectedVersion: todo.version,
+        completionPolicy: policy('reviewed'),
+      }),
+      /active review/,
+    )
+  }))

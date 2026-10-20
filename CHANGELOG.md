@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.0
+
+- Add the owner-only `repairPolicy` command for in-review tasks: update the completion policy, clear the stale completion/review result and re-run verification or a fresh independent review without repeating execution. A running linked Agent blocks the repair.
+- Add structured needs-info answers: the task detail records question/answer pairs, clears the old analysis and generated criteria, and re-analyzes with the owner answers as authoritative facts. Answers and questions remain visible after the re-analysis boundary.
+- Show a display-only notice when a Chinese task contains historical English analysis/evidence/review; the stored text stays byte-identical and is never silently translated.
+- Analysis prompts separate self-repair implementation from owner-only deployment/installation/acceptance and forbid treating deployment as an agent-verifiable criterion.
+
 ## 1.7.0
 
 - Add bounded multi-lane automation: each workspace persists an execution lane count (default 2, range 1–4) through the owner-only `setAutomationLanes` command; analysis stays globally serial, execution runs concurrently up to the persisted lanes, and `maxTasks` remains the shared activation budget. Lowering lanes never preempts running work, and restart keeps stale in-progress claims fail-closed until owner retry.
