@@ -124,6 +124,8 @@ export const en = {
   otherQueue:
     'Another workspace has an active queue. Open that workspace to manage it.',
   automationHelp: 'Run the current queue once, or keep processing new issues.',
+  queueStopped:
+    'The queue is stopped. Start it to process the eligible tasks below.',
   processing: 'Processing issues',
   analyzing: 'Analyzing',
   executing: 'Executing',
@@ -387,6 +389,7 @@ export const zh: Record<Key, string> = {
   chooseWorkspace: '选择一个工作区后，即可启动该工作区的队列。',
   otherQueue: '另一个工作区的队列正在运行，请切换到该工作区管理。',
   automationHelp: '执行当前队列，或持续接收并处理新议题。',
+  queueStopped: '队列已停止。启动后会处理下方可执行的任务。',
   processing: '正在处理议题',
   analyzing: '分析中',
   executing: '执行中',

@@ -3,7 +3,11 @@ import { z } from 'zod'
 import { createHash } from 'node:crypto'
 import { open, realpath } from 'node:fs/promises'
 import path from 'node:path'
-import type { Task, CriterionResult } from '../contract/types.ts'
+import type {
+  Task,
+  CriterionResult,
+  CompletionPolicy,
+} from '../contract/types.ts'
 export const RULE_VERSION = 'completion/3'
 export const manualPolicy = () => ({
   mode: 'manual' as const,
@@ -24,6 +28,32 @@ export const completionPolicySchema = z.strictObject({
     )
     .max(20),
 })
+/**
+ * Reject an unsatisfiable owner policy at write time. This is the same rule
+ * checkFiles enforces at completion time, moved earlier so a task cannot be
+ * created or edited into a state that can never auto-complete.
+ */
+export function completionPolicyProblem(
+  policy: CompletionPolicy,
+  criteria: readonly string[],
+): string | null {
+  if (policy.mode !== 'verified') return null
+  const checks = policy.checks
+  if (
+    !criteria.length ||
+    checks.length !== criteria.length ||
+    new Set(checks.map((check) => check.criterion)).size !==
+      criteria.length ||
+    checks.some(
+      (check) =>
+        !Number.isInteger(check.criterion) ||
+        check.criterion < 0 ||
+        check.criterion >= criteria.length,
+    )
+  )
+    return 'Verified completion requires exactly one machine check for every criterion'
+  return null
+}
 export const analysisSchema = z.strictObject({
   summary: z.string().trim().min(1).max(6000),
   plan: z.array(z.string().trim().min(1).max(3000)).min(1).max(20),

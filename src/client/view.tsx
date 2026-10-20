@@ -215,6 +215,14 @@ export function Dashboard(props: Props) {
     !!workspace && dispatch?.workspaceId === workspace.workspaceId
   const queueActive = !!dispatch?.enabled && ownsQueue
   const otherQueueActive = !!dispatch?.enabled && !ownsQueue
+  const queuedWork =
+    !!workspace &&
+    (snapshot?.tasks ?? []).some(
+      (item) =>
+        item.workspaceId === workspace!.workspaceId &&
+        !item.archived &&
+        (item.status === 'todo' || (item.status === 'triage' && item.intake)),
+    )
   const queueAttention =
     ownsQueue && dispatch?.activeSessionId
       ? attentionKey(agentState.get(dispatch.activeSessionId as never))
@@ -492,7 +500,9 @@ export function Dashboard(props: Props) {
                   ? t('otherQueue')
                   : queueActive
                     ? `${t(queueAttention ?? (dispatch?.activeTaskId ? 'processing' : 'queueListening'))} · ${dispatch?.processed}/${dispatch?.maxTasks}`
-                    : t('automationHelp')}
+                    : queuedWork
+                      ? t('queueStopped')
+                      : t('automationHelp')}
             </p>
           </div>
         </div>
@@ -933,7 +943,7 @@ export function Dashboard(props: Props) {
               </>
             )}
             {task.status === 'blocked' && <EvidenceText text={task.evidence} />}
-            {task.automationNote && (
+            {task.automationNote && task.status !== 'done' && (
               <p role="status">
                 {automationNoteText(task.automationNote, t)}
               </p>
@@ -1138,7 +1148,7 @@ export function Dashboard(props: Props) {
                 ))}
               </section>
             )}
-            {task.automationNote && (
+            {task.automationNote && task.status !== 'done' && (
               <div role="status" className="pd-banner">
                 {automationNoteText(task.automationNote, t)}
               </div>

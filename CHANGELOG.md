@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.1
+
+- Clear the pre-acceptance machine note when the owner accepts a task, and never present that note on a completed task. Legacy completed rows with the old note are normalized on read.
+- Reject a `verified` completion policy that does not have exactly one machine check per criterion at create/update time, so a task cannot be stored in a state that can never auto-complete.
+- Show an explicit stopped-queue message when a workspace has eligible tasks but its queue is not running.
+
 ## 1.6.0
 
 - Persist task language on create from the active DSH locale (`zh`/`en`). Legacy tasks without the additive field resolve deterministically: persisted value first, then Han/Latin share of owner-authored title/description (generated criteria only when that is inconclusive), then `en` for empty content. All five existing board tasks infer `zh` and keep their stored criteria, evidence and versions.

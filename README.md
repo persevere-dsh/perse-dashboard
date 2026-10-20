@@ -33,9 +33,9 @@ npm ci
 npm run check
 npm pack
 # Standard CLI:
-dsh plugin --profile web add ./perse-dashboard-1.6.0.tgz
+dsh plugin --profile web add ./perse-dashboard-1.6.1.tgz
 # This Mac's installed DSH Desktop CLI, if dsh is not on PATH:
-scripts/dsh plugin --profile desktop add ./perse-dashboard-1.6.0.tgz
+scripts/dsh plugin --profile desktop add ./perse-dashboard-1.6.1.tgz
 ```
 
 Restart the selected DSH instance after installing. Open **Dashboard** from its native sidebar. Installation is always tarball based; do not use `npm link` or a directory dependency. `scripts/dsh` only forwards to the unmodified CLI; it does not patch the application.

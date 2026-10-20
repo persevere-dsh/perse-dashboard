@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { makeBackend } from '../sim/lab/backend.mjs'
 import { checkFiles, digest } from '../lib/types/host/policy.js'
-import { boardSchema } from '../lib/types/host/board.js'
+import { BoardController, boardSchema } from '../lib/types/host/board.js'
 const policy = (mode = 'reviewed') => ({
   mode,
   instructions:
@@ -285,4 +285,101 @@ test('late idle notification from a superseded analyst cannot block the new anal
     assert.equal(b.task(t.id).status, 'triage')
     assert.equal(b.task(t.id).analysisSessionId, 'session-alpha-analyst')
     assert.equal(b.dispatcher.snapshot().error, null)
+  }))
+
+test('explicit acceptance clears the machine note and completed tasks never present it', () =>
+  harness(async (b) => {
+    let t = await b.owner.create(issue({ needsManual: true }))
+    t = await execute(b, t)
+    assert.equal(t.status, 'in-review')
+    assert.equal(t.automationNote, 'human-acceptance-required')
+    t = await b.owner.update({
+      requestId: crypto.randomUUID(),
+      id: t.id,
+      expectedVersion: t.version,
+      action: 'edit',
+      checked: t.checked.map(() => true),
+    })
+    const done = await b.owner.update({
+      requestId: crypto.randomUUID(),
+      id: t.id,
+      expectedVersion: t.version,
+      action: 'accept',
+    })
+    assert.equal(done.status, 'done')
+    assert.equal(done.completion.kind, 'human')
+    assert.equal(done.automationNote, '')
+    assert.equal(b.task(done.id).automationNote, '')
+
+    // A legacy completed row may still have the pre-acceptance note on disk.
+    // The controller must not present it as a pending automation gate.
+    const legacy = structuredClone(done)
+    legacy.automationNote = 'human-acceptance-required'
+    const raw = { revision: 1, tasks: [legacy], ledger: [], receipts: [] }
+    const controller = new BoardController(
+      {
+        get: () => raw,
+        set: async () => {},
+      },
+      {
+        workspaces: () => b.workspaces,
+        now: Date.now,
+        id: () => crypto.randomUUID(),
+      },
+    )
+    assert.equal(controller.snapshot().tasks[0].automationNote, '')
+  }))
+
+test('verified completion policy must cover every criterion when written', () =>
+  harness(async (b) => {
+    await assert.rejects(
+      b.owner.create(
+        issue({
+          completionPolicy: { mode: 'verified', instructions: '', checks: [] },
+        }),
+      ),
+      /machine check/,
+    )
+    const valid = await b.owner.create(
+      issue({ completionPolicy: policy('verified') }),
+    )
+    assert.equal(valid.completionPolicy.mode, 'verified')
+    assert.equal(valid.completionPolicy.checks.length, 1)
+    await assert.rejects(
+      b.owner.update({
+        requestId: crypto.randomUUID(),
+        id: valid.id,
+        expectedVersion: valid.version,
+        action: 'edit',
+        criteria: ['First result', 'Second result'],
+      }),
+      /machine check/,
+    )
+    const edited = await b.owner.update({
+      requestId: crypto.randomUUID(),
+      id: valid.id,
+      expectedVersion: valid.version,
+      action: 'edit',
+      completionPolicy: {
+        mode: 'verified',
+        instructions: '',
+        checks: [
+          {
+            criterion: 0,
+            path: 'result.txt',
+            kind: 'text-equals',
+            expected: 'APPROVED_RESULT',
+          },
+          {
+            criterion: 1,
+            path: 'second.txt',
+            kind: 'text-equals',
+            expected: 'SECOND',
+          },
+        ],
+      },
+      criteria: ['First result', 'Second result'],
+    })
+    assert.equal(edited.completionPolicy.checks.length, 2)
+    assert.equal(edited.status, 'triage')
   }))

@@ -27,6 +27,7 @@ import {
   reviewSchema,
   receiptSchema,
   canAutoComplete,
+  completionPolicyProblem,
   coversAll,
   RULE_VERSION,
   digest,
@@ -185,7 +186,12 @@ export class BoardController {
     boardSchema.parse(persistence.get())
   }
   snapshot(): Board {
-    return boardSchema.parse(structuredClone(this.persistence.get()))
+    const board = boardSchema.parse(structuredClone(this.persistence.get()))
+    // Older releases left the pre-acceptance machine note on completed tasks.
+    // A done task has no pending automation gate, so never present that note.
+    for (const task of board.tasks)
+      if (task.status === 'done') task.automationNote = ''
+    return board
   }
   subscribe(fn: () => void) {
     this.listeners.add(fn)
@@ -300,6 +306,10 @@ export class BoardController {
       this.workspace(r.workspaceId)
       this.checkAssignee(r.workspaceId, r.assignee)
       this.checkImages(r.inputImages)
+      const policy = r.completionPolicy ?? manualPolicy()
+      const policyProblem = completionPolicyProblem(policy, r.criteria)
+      if (policyProblem)
+        throw new BoardError('policy-incomplete', policyProblem)
       const now = this.env.now()
       return {
         action: 'create',
@@ -337,7 +347,7 @@ export class BoardController {
           reviewSessionId: null,
           reviewPromptHash: null,
           review: null,
-          completionPolicy: r.completionPolicy ?? manualPolicy(),
+          completionPolicy: policy,
           completion: null,
           automationNote: '',
         },
@@ -395,6 +405,14 @@ export class BoardController {
         if (r.needsManual !== undefined) task.needsManual = r.needsManual
         if (r.inputImages !== undefined)
           task.inputImages = structuredClone(r.inputImages)
+        if (r.completionPolicy !== undefined || r.criteria !== undefined) {
+          const policyProblem = completionPolicyProblem(
+            task.completionPolicy,
+            task.criteria,
+          )
+          if (policyProblem)
+            throw new BoardError('policy-incomplete', policyProblem)
+        }
         const scopeChanged =
           r.criteria !== undefined ||
           r.title !== undefined ||
@@ -485,6 +503,7 @@ export class BoardController {
             'Evidence and all acceptance checks are required',
           )
         task.status = 'done'
+        task.automationNote = ''
         task.completion = {
           kind: 'human',
           time: this.env.now(),
