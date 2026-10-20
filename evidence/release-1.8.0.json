@@ -1,0 +1,137 @@
+{
+ "version": "1.8.0",
+ "commit": "42e00c8554590bbefce89fb6f8689ceb800464d1",
+ "tarball": "perse-dashboard-1.8.0.tgz",
+ "tarballSha256": "f04d6a9369a6b6fadc0f1eaefcccbf451e8a38e3df9443bdb8fa856d6ca1e0eb",
+ "installedVersion": "1.8.0",
+ "install": {
+  "application": "applied",
+  "stage": "enable",
+  "enabled": true,
+  "source": "file:/Users/lxl/Documents/anything/perse-dashboard/perse-dashboard-1.8.0.tgz"
+ },
+ "tests": {
+  "command": "npm run check",
+  "tests": 98,
+  "status": "passed",
+  "remotes": 13
+ },
+ "features": [
+  "Owner-only repairPolicy for in-review tasks: update policy, clear stale completion/review, re-run verification or review without re-execution.",
+  "Structured needs-info answers (Task.answers): persist Q/A, clear generated criteria, re-analyze with answers as authoritative facts.",
+  "Self-repair implementation/deployment split in analysis prompts and docs.",
+  "Display-only legacy-original notice for Chinese tasks with historical English generated text.",
+  "Stopped-queue visibility and archival of orphaned failed retry sessions."
+ ],
+ "lanes": {
+  "native": {
+   "runId": "20261020-205952-535e98",
+   "status": "passed",
+   "assertions": 43,
+   "cleanup": true,
+   "packageSha256": "f04d6a9369a6b6fadc0f1eaefcccbf451e8a38e3df9443bdb8fa856d6ca1e0eb",
+   "runtimeVersion": "0.2.1-rc.2"
+  },
+  "lab": {
+   "runId": "20261020-210028-b52883",
+   "status": "passed",
+   "scenarios": 30,
+   "cleanup": true,
+   "browserErrors": []
+  }
+ },
+ "liveVerification": {
+  "base": "http://127.0.0.1:64338",
+  "revision": 88,
+  "dispatch": {
+   "enabled": false,
+   "workspaceId": null,
+   "activeTaskId": null,
+   "activeSessionId": null,
+   "active": [],
+   "lanes": 2,
+   "error": null,
+   "errorTaskId": null,
+   "watch": false,
+   "processed": 0,
+   "maxTasks": 10
+  },
+  "capabilities": {
+   "create": true,
+   "update": true,
+   "dispatch": true,
+   "analyze": true,
+   "verify": true,
+   "imageInput": true
+  },
+  "tasks": [
+   {
+    "id": "0289eab0-f685-494d-9196-3b651e3c722b",
+    "title": "修改当前看板整体颜色风格",
+    "status": "done",
+    "version": 14,
+    "completionKind": "human",
+    "automationNote": "",
+    "reviewVerdict": null
+   },
+   {
+    "id": "60c2d41e-2da8-4f4d-a020-c069f3c33c07",
+    "title": "任务说明和验收标准不支持贴图片",
+    "status": "done",
+    "version": 19,
+    "completionKind": "human",
+    "automationNote": "",
+    "reviewVerdict": null
+   },
+   {
+    "id": "c1443abe-ff80-46f1-bc2b-2db61584f554",
+    "title": "DSH 默认权限设置修改后支持修改已有的所有会话的默认权限",
+    "status": "done",
+    "version": 15,
+    "completionKind": "human",
+    "automationNote": "",
+    "reviewVerdict": "pass"
+   },
+   {
+    "id": "98be9a78-e25b-460e-a25b-be90ae6a6a25",
+    "title": "自动化处理支持多路数处理",
+    "status": "done",
+    "version": 30,
+    "completionKind": "human",
+    "automationNote": "",
+    "reviewVerdict": "needs-human"
+   },
+   {
+    "id": "56d99b8d-279b-45d8-a673-dcb47bc1b7c2",
+    "title": "任务语言不一致",
+    "status": "done",
+    "version": 10,
+    "completionKind": "human",
+    "automationNote": "",
+    "reviewVerdict": null
+   }
+  ],
+  "historicalNoticeVisible": true,
+  "lanesControlVisible": true,
+  "pageErrors": []
+ },
+ "boardAudit": {
+  "done": 5,
+  "needsInfo": 0,
+  "inReview": 0,
+  "blocked": 0,
+  "queueEnabled": false
+ },
+ "archivedSessions": [
+  "session-7ca748c5-51bf-4029-b711-0163dc086c70",
+  "session-64855757-b170-4959-8c4f-f6c36c456a2a",
+  "session-dce5ae12-0c6b-4cd5-9728-5680bca31533",
+  "session-f330d70c-caff-48d6-a088-bae5ad5fd065"
+ ],
+ "limitations": [
+  "The repairPolicy and structured-answer forms are contract-tested and built, but the live board had no in-review or needs-info task at release time, so they were not exercised through a live task form.",
+  "Native/Lab use the deterministic simulator model; no live external-model run is claimed for 1.8.0.",
+  "The queue remains stopped after the hot reload; no task is currently eligible because all five board tasks are done.",
+  "No worktree registry, automatic merge, deployment or external publication is introduced."
+ ]
+}
