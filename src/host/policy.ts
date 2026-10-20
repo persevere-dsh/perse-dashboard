@@ -54,12 +54,43 @@ export function completionPolicyProblem(
     return 'Verified completion requires exactly one machine check for every criterion'
   return null
 }
-export const analysisSchema = z.strictObject({
+const coordinationTaskId = z.string().min(1).max(150)
+const resourceConflict = {
+  key: z.string().max(128),
+  taskIds: z.array(coordinationTaskId).max(20),
+}
+/**
+ * Persisted records tolerate future additive fields at every level, including
+ * the nested resourceConflicts entries. Command/report schemas below stay
+ * strict so an untrusted phase prompt cannot smuggle unknown input fields.
+ */
+const coordinationShape = {
+  dependencies: z.array(coordinationTaskId).max(20),
+  resourceKeys: z.array(z.string().max(128)).max(8),
+  dependencyOrder: z.array(coordinationTaskId).max(40),
+  resourceConflicts: z.array(z.object(resourceConflict)).max(8),
+  isolation: z.enum(['none', 'workspace', 'manual-workspace']),
+  mergeRisk: z.enum(['low', 'medium', 'high']),
+}
+export const coordinationSchema = z.strictObject({
+  ...coordinationShape,
+  resourceConflicts: z.array(z.strictObject(resourceConflict)).max(8),
+})
+export const storedCoordinationSchema = z.object(coordinationShape)
+const analysisShape = {
   summary: z.string().trim().min(1).max(6000),
   plan: z.array(z.string().trim().min(1).max(3000)).min(1).max(20),
   risk: z.enum(['low', 'medium', 'high']),
   route: z.enum(['express', 'staged', 'needs-info', 'human']),
   questions: z.array(z.string().trim().min(1).max(1000)).max(20),
+}
+export const analysisSchema = z.strictObject({
+  ...analysisShape,
+  coordination: coordinationSchema.nullable().default(null),
+})
+export const storedAnalysisSchema = z.object({
+  ...analysisShape,
+  coordination: storedCoordinationSchema.nullable().default(null),
 })
 export const criterionResultSchema = z.strictObject({
   criterion: z.number().int().nonnegative(),

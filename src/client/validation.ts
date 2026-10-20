@@ -17,7 +17,30 @@ const schema = z.object({
       time: z.number(),
     }),
   ),
-  dispatch: z.object({ enabled: z.boolean(), error: z.string().nullable() }),
+  dispatch: z.object({
+    enabled: z.boolean(),
+    error: z.string().nullable(),
+    active: z
+      .array(
+        z.object({
+          taskId: z.string(),
+          sessionId: z.string(),
+          phase: z.enum(['analysis', 'execution']),
+        }),
+      )
+      .optional(),
+    lanes: z.number().int().min(1).max(4).optional(),
+  }),
+  settings: z
+    .object({
+      workspaces: z
+        .record(
+          z.string(),
+          z.object({ lanes: z.number().int().min(1).max(4) }),
+        )
+        .optional(),
+    })
+    .optional(),
   capabilities: z.record(z.string(), z.boolean()).optional(),
   imageLimits: z
     .object({
@@ -70,6 +93,8 @@ const schema = z.object({
           .max(4)
           .optional(),
         language: z.enum(['zh', 'en']).nullable().optional(),
+        dependencies: z.array(z.string()).optional(),
+        resourceKeys: z.array(z.string()).optional(),
         priority: z.number().int().min(0).max(2),
         assignee: z.string().nullable(),
         sessionId: z.string().nullable(),
@@ -95,6 +120,26 @@ const schema = z.object({
             risk: z.enum(['low', 'medium', 'high']),
             route: z.enum(['express', 'staged', 'needs-info', 'human']),
             questions: z.array(z.string()),
+            coordination: z
+              .object({
+                dependencies: z.array(z.string()),
+                resourceKeys: z.array(z.string()),
+                dependencyOrder: z.array(z.string()),
+                resourceConflicts: z.array(
+                  z.object({
+                    key: z.string(),
+                    taskIds: z.array(z.string()),
+                  }),
+                ),
+                isolation: z.enum([
+                  'none',
+                  'workspace',
+                  'manual-workspace',
+                ]),
+                mergeRisk: z.enum(['low', 'medium', 'high']),
+              })
+              .nullable()
+              .optional(),
           })
           .nullable()
           .optional(),

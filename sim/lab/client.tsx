@@ -125,11 +125,31 @@ function App() {
     },
     [],
   )
+  const previewExistingPermissions = useCallback(async (pending: any[]) => {
+    const r = await fetch('/permission-apply/preview', {
+      method: 'POST',
+      body: JSON.stringify({ pending }),
+    })
+    const result = await r.json()
+    if (!r.ok || !result.ok) throw Error(result.error)
+    return result.value
+  }, [])
+  const applyExistingPermissions = useCallback(async (request: any) => {
+    const r = await fetch('/permission-apply/apply', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    })
+    const result = await r.json()
+    if (!r.ok || !result.ok) throw Error(result.error)
+    return result.value
+  }, [])
   const image = useCallback(command('image'), [])
   const inputImage = useCallback(command('inputImage'), [])
   const props: any = {
     loadPermissions,
     savePermissionDefault,
+    previewExistingPermissions,
+    applyExistingPermissions,
     t: (key: keyof typeof en) => dictionary[key],
     language: () => (locale === 'zh' ? 'zh' : 'en'),
     useResource: () => ({ status, value: data?.snapshot }),
@@ -165,6 +185,7 @@ function App() {
     create: command('create'),
     update: command('update'),
     dispatch: command('dispatch'),
+    setAutomationLanes: command('setAutomationLanes'),
     analyze: command('analyze'),
     verify: command('verify'),
     openSession: (id: string) => setNotice('Opened synthetic Session ' + id),

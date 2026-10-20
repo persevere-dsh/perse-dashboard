@@ -17,6 +17,7 @@ import {
 } from '../lib/types/host/prompts.js'
 import { runPhase } from '../lib/types/host/phases.js'
 import { automationNoteText } from '../lib/types/client/notes.js'
+import { nextStep } from '../lib/types/client/workflow.js'
 import { handoffPrompt } from '../lib/types/client/handoff.js'
 import { en, zh } from '../lib/types/client/locales.js'
 const task = (extra = {}) => ({
@@ -206,7 +207,11 @@ test('zh and en prompts keep machine contracts while localizing owner-facing tex
   assert.match(zhAnalysis, /dashboard_triage/)
   assert.match(zhAnalysis, /taskId/)
   assert.match(zhAnalysis, /expectedVersion/)
-  assert.match(zhAnalysis, /analysis \{summary,plan,risk,route,questions\}/)
+  assert.match(
+    zhAnalysis,
+    /analysis \{summary,plan,risk,route,questions,coordination\}/,
+  )
+  assert.match(zhAnalysis, /analysis\.coordination/)
   assert.match(zhAnalysis, /criteria/)
   assert.match(zhAnalysis, /PERSE_PHASE=analysis/)
   assert.ok(!zhAnalysis.includes('Analyze dashboard issue'))
@@ -314,6 +319,25 @@ test('automation machine notes render in Chinese while stored tokens stay untouc
       t,
     ),
     zh.machineAgentResumed,
+  )
+  assert.ok(
+    automationNoteText('dependency-invalidated:task-2:blocked', t).includes(
+      zh.machineDependencyInvalidated,
+    ),
+  )
+  assert.ok(
+    automationNoteText('dependency-invalidated:task-2:archived', t).includes(
+      'task-2',
+    ),
+  )
+  assert.deepEqual(Object.keys(en).sort(), Object.keys(zh).sort())
+  assert.equal(
+    nextStep(task(), false, false, 'wait'),
+    'nextDependencyWait',
+  )
+  assert.equal(
+    nextStep(task(), false, false, 'attention'),
+    'nextDependencyAttention',
   )
   assert.equal(
     automationNoteText('Where should the result go?', t),

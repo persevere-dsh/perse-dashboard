@@ -16,13 +16,27 @@ import type {
   TaskStatus,
   DispatchRequest,
   DispatchState,
+  LaneRequest,
 } from '../contract/types.ts'
 import type { createDashboardStore } from './store.ts'
 import type { Key } from './locales.ts'
 import { automationNoteText } from './notes.ts'
-import { normalizeDescription, resolveTaskLanguage } from '../contract/language.ts'
+import {
+  normalizeDescription,
+  resolveTaskLanguage,
+} from '../contract/language.ts'
 import type { TaskLanguage } from '../contract/types.ts'
 import { CompletionEditor } from './completion-editor.tsx'
+import {
+  MAX_DEPENDENCIES,
+  MAX_RESOURCE_KEYS,
+  dependencyCandidates,
+  dependencyFacts,
+  invalidDependency,
+  resourceHolders,
+  resourceKeyProblem,
+  type CoordinationTask,
+} from '../contract/coordination.ts'
 import { OptionGroup } from './option-group.tsx'
 import { completionBlocks, nextStep, taskNeedsAction } from './workflow.ts'
 import { EvidenceText, EvidenceImages } from './evidence.tsx'
@@ -51,6 +65,9 @@ export interface Injected extends PermissionControls {
   dispatch(r: DispatchRequest): Promise<DispatchState>
   analyze(r: TaskCommand): Promise<Task>
   verify(r: TaskCommand): Promise<Task>
+  setAutomationLanes(
+    r: LaneRequest,
+  ): Promise<{ workspaceId: string; lanes: number; revision: number }>
   openSession(id: string): void
   handoff(ws: string, id: string): void
   language(): TaskLanguage
@@ -103,6 +120,8 @@ export function Dashboard(props: Props) {
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [budget, setBudget] = useState('10'),
+    [lanes, setLanes] = useState('2'),
+    [lanesNotice, setLanesNotice] = useState(''),
     [detailTab, setDetailTab] = useState('overview'),
     [createDirty, setCreateDirty] = useState(false),
     [discard, setDiscard] = useState(false),
@@ -140,12 +159,40 @@ export function Dashboard(props: Props) {
     const key = attentionKey(agentState.get(session.id))
     return key ? [{ session, key }] : []
   })
+  // The Host has no pending-interaction registry; the native status hook owns
+  // the cross-workspace pending facts supplied to the one-shot apply preview.
+  const pendingPermissions = [...agentState.entries()].flatMap(
+    ([id, status]) =>
+      status.pendingInteraction
+        ? [
+            {
+              sessionId: String(id),
+              kind: status.pendingInteraction.kind,
+            },
+          ]
+        : [],
+  )
+  const activeSlots = snapshot?.dispatch.active ?? []
+  const persistedLanes =
+    (workspace &&
+      snapshot?.settings?.workspaces?.[workspace.workspaceId]?.lanes) ??
+    2
+  const validLanes =
+    /^\d+$/.test(lanes) && Number(lanes) >= 1 && Number(lanes) <= 4
+  // Durable in-progress claims (including stale claims after restart) occupy a
+  // lane even when no process-local slot is running them.
+  const durableLanes = (snapshot?.tasks ?? []).filter(
+    (item) =>
+      item.workspaceId === workspace?.workspaceId &&
+      !item.archived &&
+      item.status === 'in-progress',
+  ).length
   const isRunning = (item: Task) =>
     activeTaskSessions(item).some(
       (id) =>
         agentState.get(id as never)?.running ??
         sessionState.byId[id as never]?.running,
-    ) || snapshot?.dispatch.activeTaskId === item.id
+    ) || activeSlots.some((slot) => slot.taskId === item.id)
   const queueFor = (item: Task) =>
     !!snapshot?.dispatch.enabled &&
     snapshot.dispatch.workspaceId === item.workspaceId
@@ -165,6 +212,36 @@ export function Dashboard(props: Props) {
       const key = attentionKey(agentState.get(id as never))
       return key ? [{ id, key }] : []
     })
+  /** Durable dependency/resource presentation; never inferred from prose. */
+  const coordinationFor = (item: Task) => {
+    const all = snapshot?.tasks ?? []
+    const dependencies = dependencyFacts(item, all)
+    const waiting = dependencies.filter(
+      (dependency) => dependency.archived || dependency.status !== 'done',
+    )
+    const holders = resourceHolders(item, all)
+    const invalid = invalidDependency(item, all)
+    const invalidated = item.automationNote.startsWith(
+      'dependency-invalidated:',
+    )
+    return {
+      dependencies,
+      waiting,
+      holders,
+      invalid,
+      attention: !!(
+        invalidated ||
+        (invalid &&
+          (invalid.archived ||
+            invalid.status === 'blocked' ||
+            invalid.status === 'needs-info')) ||
+        // A started successor whose dependency was reopened/removed keeps
+        // running, but presentation must surface the owner decision.
+        (['in-progress', 'in-review'].includes(item.status) &&
+          waiting.length > 0)
+      ),
+    }
+  }
   const task = snapshot?.tasks.find(
       (v) =>
         v.id === selected && (!workspaceId || v.workspaceId === workspaceId),
@@ -176,6 +253,7 @@ export function Dashboard(props: Props) {
     const u = s.projectionValues?.tokenUsage
     return sum + (u ? Object.values(u).reduce((a, b) => a + b, 0) : 0)
   }, 0)
+  const detailCoordination = task ? coordinationFor(task) : undefined
   const linkedRunning =
     !!task &&
     [task.sessionId, task.analysisSessionId, task.reviewSessionId].some(
@@ -223,15 +301,24 @@ export function Dashboard(props: Props) {
         !item.archived &&
         (item.status === 'todo' || (item.status === 'triage' && item.intake)),
     )
-  const queueAttention =
-    ownsQueue && dispatch?.activeSessionId
-      ? attentionKey(agentState.get(dispatch.activeSessionId as never))
-      : undefined
+  const queueAttention = ownsQueue
+    ? activeSlots
+        .map((slot) =>
+          attentionKey(agentState.get(slot.sessionId as never)),
+        )
+        .find(Boolean)
+    : undefined
   const validBudget =
     /^\d+$/.test(budget) && Number(budget) >= 1 && Number(budget) <= 100
   useEffect(() => {
     if (ownsQueue && dispatch) setBudget(String(dispatch.maxTasks))
   }, [ownsQueue, dispatch?.maxTasks])
+  useEffect(() => {
+    if (workspace) {
+      setLanes(String(persistedLanes))
+      setLanesNotice('')
+    }
+  }, [workspace?.workspaceId, persistedLanes])
   useEffect(() => {
     setDetailTab('overview')
     setDirtyParts({ editor: false, evidence: false })
@@ -499,15 +586,58 @@ export function Dashboard(props: Props) {
                 : otherQueueActive
                   ? t('otherQueue')
                   : queueActive
-                    ? `${t(queueAttention ?? (dispatch?.activeTaskId ? 'processing' : 'queueListening'))} · ${dispatch?.processed}/${dispatch?.maxTasks}`
+                    ? `${t(queueAttention ?? (activeSlots.length ? 'processing' : 'queueListening'))} · ${t('lanes')} ${persistedLanes} · ${durableLanes}/${persistedLanes} · ${dispatch?.processed}/${dispatch?.maxTasks}`
                     : queuedWork
                       ? t('queueStopped')
                       : t('automationHelp')}
             </p>
+            {workspace && (
+              <p className="pd-muted">{t('lanesHint')}</p>
+            )}
           </div>
         </div>
         {workspace && (
           <div className="pd-automation-actions">
+            <label className="pd-budget" title={t('lanesHint')}>
+              {t('lanes')}
+              <input
+                aria-label={t('lanes')}
+                type="number"
+                min={1}
+                max={4}
+                value={lanes}
+                onChange={(e) => {
+                  setLanes(e.target.value)
+                  setLanesNotice('')
+                }}
+                aria-invalid={!validLanes}
+              />
+            </label>
+            <button
+              disabled={
+                busy ||
+                !commandsAvailable ||
+                !validLanes ||
+                Number(lanes) === persistedLanes
+              }
+              onClick={() =>
+                act(async () => {
+                  await props.setAutomationLanes({
+                    requestId: crypto.randomUUID(),
+                    workspaceId: workspace.workspaceId,
+                    lanes: Number(lanes),
+                  })
+                  setLanesNotice(t('lanesSaved'))
+                })
+              }
+            >
+              {t('saveLanes')}
+            </button>
+            {lanesNotice && (
+              <span role="status" className="pd-muted">
+                {lanesNotice}
+              </span>
+            )}
             <label className="pd-budget">
               {t('budget')}
               <input
@@ -562,6 +692,9 @@ export function Dashboard(props: Props) {
         t={t}
         loadPermissions={props.loadPermissions}
         savePermissionDefault={props.savePermissionDefault}
+        previewExistingPermissions={props.previewExistingPermissions}
+        applyExistingPermissions={props.applyExistingPermissions}
+        pending={pendingPermissions}
       />
       {tab === 'board' ? (
         <div className="pd-layout">
@@ -585,63 +718,110 @@ export function Dashboard(props: Props) {
                 <div className="pd-column-cards">
                   {tasks
                     .filter((item) => item.status === status)
-                    .map((item) => (
-                      <button
-                        className={`pd-card ${taskAttention(item).length ? 'is-attention' : ''}`}
-                        key={item.id}
-                        aria-pressed={selected === item.id}
-                        title={t(
-                          nextStep(item, !!isRunning(item), queueFor(item)),
-                        )}
-                        onClick={() => setSelected(item.id)}
-                      >
-                        <span className="pd-card-meta">
-                          <span
-                            className={`pd-priority priority-${item.priority}`}
-                          >
-                            {t(
-                              (['low', 'normal', 'high'] as Key[])[
-                                item.priority
-                              ]!,
+                    .map((item) => {
+                      const coordination = coordinationFor(item)
+                      const attention =
+                        taskAttention(item).length > 0 || coordination.attention
+                      return (
+                        <button
+                          className={`pd-card ${attention ? 'is-attention' : ''}`}
+                          key={item.id}
+                          aria-pressed={selected === item.id}
+                          title={
+                            coordination.attention
+                              ? t('nextDependencyAttention')
+                              : coordination.waiting.length
+                                ? t('nextDependencyWait')
+                                : t(
+                                    nextStep(
+                                      item,
+                                      !!isRunning(item),
+                                      queueFor(item),
+                                    ),
+                                  )
+                          }
+                          onClick={() => setSelected(item.id)}
+                        >
+                          <span className="pd-card-meta">
+                            <span
+                              className={`pd-priority priority-${item.priority}`}
+                            >
+                              {t(
+                                (['low', 'normal', 'high'] as Key[])[
+                                  item.priority
+                                ]!,
+                              )}
+                            </span>
+                            <code>{item.id.slice(0, 8)}</code>
+                          </span>
+                          <strong>{item.title}</strong>
+                          <span className="pd-card-description">
+                            {normalizeDescription(
+                              item.description,
+                              resolveTaskLanguage(item),
+                            ) || t('noDescription')}
+                          </span>
+                          <span className="pd-card-tags">
+                            <span
+                              className={`pd-badge ${attention ? 'is-attention' : ''}`}
+                            >
+                              {t(phase(item))}
+                            </span>
+                            {item.needsManual && (
+                              <span className="pd-badge">{t('manual')}</span>
+                            )}
+                            {coordination.attention && (
+                              <span className="pd-badge is-attention">
+                                {t('dependencyAttention')}
+                              </span>
+                            )}
+                            {coordination.waiting.length > 0 && (
+                              <span
+                                className="pd-badge"
+                                title={coordination.waiting
+                                  .map(
+                                    (dependency) =>
+                                      `${dependency.title} (${dependency.taskId.slice(0, 8)})`,
+                                  )
+                                  .join(', ')}
+                              >
+                                {t('dependsOn')} · {coordination.waiting.length}
+                              </span>
+                            )}
+                            {coordination.holders.length > 0 && (
+                              <span
+                                className="pd-badge is-attention"
+                                title={coordination.holders
+                                  .map(
+                                    (holder) =>
+                                      `${holder.key}: ${holder.title} (${holder.taskId.slice(0, 8)})`,
+                                  )
+                                  .join(', ')}
+                              >
+                                {t('resourceHeld')} ·{' '}
+                                {coordination.holders[0]!.key}
+                              </span>
                             )}
                           </span>
-                          <code>{item.id.slice(0, 8)}</code>
-                        </span>
-                        <strong>{item.title}</strong>
-                        <span className="pd-card-description">
-                          {normalizeDescription(
-                            item.description,
-                            resolveTaskLanguage(item),
-                          ) || t('noDescription')}
-                        </span>
-                        <span className="pd-card-tags">
-                          <span
-                            className={`pd-badge ${taskAttention(item).length ? 'is-attention' : ''}`}
-                          >
-                            {t(phase(item))}
+                          <span className="pd-progress" aria-hidden="true">
+                            <span
+                              style={{
+                                width: `${item.criteria.length ? (item.checked.filter(Boolean).length / item.criteria.length) * 100 : 0}%`,
+                              }}
+                            />
                           </span>
-                          {item.needsManual && (
-                            <span className="pd-badge">{t('manual')}</span>
-                          )}
-                        </span>
-                        <span className="pd-progress" aria-hidden="true">
-                          <span
-                            style={{
-                              width: `${item.criteria.length ? (item.checked.filter(Boolean).length / item.criteria.length) * 100 : 0}%`,
-                            }}
-                          />
-                        </span>
-                        <span className="pd-card-meta">
-                          <small title={sessionTitle(item)}>
-                            {sessionTitle(item)}
-                          </small>
-                          <span>
-                            {item.checked.filter(Boolean).length}/
-                            {item.criteria.length}
+                          <span className="pd-card-meta">
+                            <small title={sessionTitle(item)}>
+                              {sessionTitle(item)}
+                            </small>
+                            <span>
+                              {item.checked.filter(Boolean).length}/
+                              {item.criteria.length}
+                            </span>
                           </span>
-                        </span>
-                      </button>
-                    ))}
+                        </button>
+                      )
+                    })}
                 </div>
                 {!tasks.some((item) => item.status === status) && (
                   <p className="pd-column-empty">—</p>
@@ -878,7 +1058,7 @@ export function Dashboard(props: Props) {
                       disabled={
                         busy ||
                         !commandsAvailable ||
-                        dispatch?.activeTaskId === task.id
+                        activeSlots.some((slot) => slot.taskId === task.id)
                       }
                       onClick={() => mutation(task, { action: 'retry' })}
                     >
@@ -926,7 +1106,20 @@ export function Dashboard(props: Props) {
           ))}
           <section className="pd-next-detail" aria-label={t('nextSteps')}>
             <h3>{t('nextSteps')}</h3>
-            <p>{t(nextStep(task, !!isRunning(task), queueFor(task)))}</p>
+            <p>
+              {t(
+                nextStep(
+                  task,
+                  !!isRunning(task),
+                  queueFor(task),
+                  detailCoordination?.attention
+                    ? 'attention'
+                    : detailCoordination?.waiting.length
+                      ? 'wait'
+                      : null,
+                ),
+              )}
+            </p>
             {task.status === 'in-review' && (
               <>
                 <h4>{t('completionGates')}</h4>
@@ -944,9 +1137,7 @@ export function Dashboard(props: Props) {
             )}
             {task.status === 'blocked' && <EvidenceText text={task.evidence} />}
             {task.automationNote && task.status !== 'done' && (
-              <p role="status">
-                {automationNoteText(task.automationNote, t)}
-              </p>
+              <p role="status">{automationNoteText(task.automationNote, t)}</p>
             )}
           </section>
           {task.completion && (
@@ -1021,6 +1212,100 @@ export function Dashboard(props: Props) {
                 </div>
               ))}
             </div>
+            <section className="pd-section" aria-label={t('dependencies')}>
+              <h3>{t('dependencies')}</h3>
+              {detailCoordination?.dependencies.length ? (
+                <ul className="pd-dependency-list">
+                  {detailCoordination.dependencies.map((dependency) => (
+                    <li key={dependency.taskId}>
+                      <div>
+                        <button
+                          className="pd-text-button"
+                          onClick={() =>
+                            navigate(() => setSelected(dependency.taskId))
+                          }
+                        >
+                          {dependency.title}
+                        </button>
+                        <code title={dependency.taskId}>
+                          {dependency.taskId}
+                        </code>
+                        <span className="pd-badge">{t(dependency.status)}</span>
+                        {dependency.archived && (
+                          <span className="pd-badge is-attention">
+                            {t('dependencyArchived')}
+                          </span>
+                        )}
+                      </div>
+                      <small className="pd-muted">
+                        {dependency.sessionId
+                          ? `${t('dependencySession')}: ${
+                              sessionState.byId[
+                                dependency.sessionId as never
+                              ]?.displayTitle ?? dependency.sessionId
+                            }`
+                          : t('notStarted')}
+                      </small>
+                      {dependency.sessionId && (
+                        <button
+                          onClick={() => openSession(dependency.sessionId!)}
+                        >
+                          {t('openSession')}
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="pd-muted">{t('noDependencies')}</p>
+              )}
+              <h3>{t('resourceKeys')}</h3>
+              {task.resourceKeys.length ? (
+                <ul className="pd-dependency-list">
+                  {task.resourceKeys.map((key) => {
+                    const holder =
+                      detailCoordination?.holders.find(
+                        (candidate) => candidate.key === key,
+                      ) ??
+                      (task.status === 'in-progress'
+                        ? {
+                            key,
+                            taskId: task.id,
+                            title: task.title,
+                            sessionId: task.sessionId,
+                          }
+                        : undefined)
+                    return (
+                      <li key={key}>
+                        <code>{key}</code>
+                        {holder ? (
+                          <span
+                            className="pd-badge is-attention"
+                            title={`${holder.taskId} · ${holder.sessionId ?? t('notStarted')}`}
+                          >
+                            {t('resourceHeldBy')}: {holder.title} ·{' '}
+                            {holder.sessionId
+                              ? (sessionState.byId[
+                                  holder.sessionId as never
+                                ]?.displayTitle ?? holder.sessionId)
+                              : t('notStarted')}
+                          </span>
+                        ) : (
+                          <span className="pd-badge">{t('resourceFree')}</span>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <p className="pd-muted">{t('noResourceKeys')}</p>
+              )}
+              {detailCoordination?.attention && (
+                <p role="status" className="pd-banner">
+                  {t('nextDependencyAttention')}
+                </p>
+              )}
+            </section>
             <section className="pd-section">
               <h3>{t('description')}</h3>{' '}
               <p className="pd-muted" style={{ whiteSpace: 'pre-wrap' }}>
@@ -1146,6 +1431,71 @@ export function Dashboard(props: Props) {
                 {task.analysis.questions.map((q, i) => (
                   <p key={i}>{q}</p>
                 ))}
+                {task.analysis.coordination && (
+                  <section aria-label={t('coordination')}>
+                    <h4>{t('coordination')}</h4>
+                    <dl className="pd-coordination-summary">
+                      <dt>{t('dependencies')}</dt>
+                      <dd>
+                        {task.analysis.coordination.dependencies.length
+                          ? task.analysis.coordination.dependencies
+                              .map((id) => id.slice(0, 8))
+                              .join(', ')
+                          : '—'}
+                      </dd>
+                      <dt>{t('resourceKeys')}</dt>
+                      <dd>
+                        {task.analysis.coordination.resourceKeys.length
+                          ? task.analysis.coordination.resourceKeys.join(', ')
+                          : '—'}
+                      </dd>
+                      <dt>{t('dependencyOrder')}</dt>
+                      <dd>
+                        {task.analysis.coordination.dependencyOrder.length
+                          ? task.analysis.coordination.dependencyOrder
+                              .map((id) => id.slice(0, 8))
+                              .join(' → ')
+                          : '—'}
+                      </dd>
+                      <dt>{t('resourceConflicts')}</dt>
+                      <dd>
+                        {task.analysis.coordination.resourceConflicts.length
+                          ? task.analysis.coordination.resourceConflicts
+                              .map(
+                                (conflict) =>
+                                  `${conflict.key}: ${conflict.taskIds
+                                    .map((id) => id.slice(0, 8))
+                                    .join(', ')}`,
+                              )
+                              .join(' · ')
+                          : '—'}
+                      </dd>
+                      <dt>{t('isolation')}</dt>
+                      <dd>
+                        {t(
+                          task.analysis.coordination.isolation === 'none'
+                            ? 'isolationNone'
+                            : task.analysis.coordination.isolation ===
+                                'workspace'
+                              ? 'isolationWorkspace'
+                              : 'isolationManualWorkspace',
+                        )}
+                      </dd>
+                      <dt>{t('mergeRisk')}</dt>
+                      <dd>
+                        {t(
+                          (
+                            {
+                              low: 'riskLow',
+                              medium: 'riskMedium',
+                              high: 'riskHigh',
+                            } as const
+                          )[task.analysis.coordination.mergeRisk],
+                        )}
+                      </dd>
+                    </dl>
+                  </section>
+                )}
               </section>
             )}
             {task.automationNote && task.status !== 'done' && (
@@ -1208,6 +1558,7 @@ export function Dashboard(props: Props) {
                 <TaskEditor
                   key={`editor:${task.id}`}
                   task={task}
+                  tasks={snapshot?.tasks ?? []}
                   t={t}
                   busy={busy || linkedRunning || !commandsAvailable}
                   limits={snapshot?.imageLimits ?? FALLBACK_IMAGE_LIMITS}
@@ -1334,6 +1685,7 @@ export function Dashboard(props: Props) {
             key={workspaceId}
             t={t}
             workspaces={workspaces}
+            tasks={snapshot?.tasks ?? []}
             sessions={sessionState.ids
               .filter((id) => !phaseSessions.has(id))
               .map((id) => sessionState.byId[id])}
@@ -1344,9 +1696,7 @@ export function Dashboard(props: Props) {
             limits={snapshot?.imageLimits ?? FALLBACK_IMAGE_LIMITS}
             inputImage={props.inputImage}
             language={props.language}
-            imageInputAvailable={
-              snapshot?.capabilities?.imageInput !== false
-            }
+            imageInputAvailable={snapshot?.capabilities?.imageInput !== false}
             submit={(r) =>
               act(async () => {
                 const created = await props.create(r)
@@ -1475,9 +1825,175 @@ function Evidence({
     </div>
   )
 }
+function DependencyEditor({
+  tasks,
+  workspaceId,
+  selfId,
+  value,
+  change,
+  t,
+  disabled,
+}: {
+  tasks: readonly CoordinationTask[]
+  workspaceId: string
+  selfId: string | null
+  value: string[]
+  change: (value: string[]) => void
+  t: Injected['t']
+  disabled: boolean
+}) {
+  const candidates = dependencyCandidates(tasks, workspaceId, selfId)
+  const options: CoordinationTask[] = [...candidates]
+  for (const id of value)
+    if (!options.some((option) => option.id === id)) {
+      const existing = tasks.find((task) => task.id === id)
+      options.push(
+        existing ?? {
+          id,
+          workspaceId,
+          title: id,
+          status: 'blocked',
+          archived: true,
+          dependencies: [],
+        },
+      )
+    }
+  return (
+    <fieldset className="pd-criteria-editor pd-dependency-editor">
+      <legend>{t('dependencies')}</legend>
+      <p className="pd-muted">{t('dependencyHelp')}</p>
+      {options.length ? (
+        options.map((option) => {
+          const checked = value.includes(option.id)
+          return (
+            <label className="pd-check" key={option.id}>
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={
+                  disabled ||
+                  (option.archived && !checked) ||
+                  (!checked && value.length >= MAX_DEPENDENCIES)
+                }
+                onChange={(event) =>
+                  change(
+                    event.target.checked
+                      ? [...value, option.id]
+                      : value.filter((id) => id !== option.id),
+                  )
+                }
+              />
+              <span>
+                {option.title} <code>{option.id.slice(0, 8)}</code>{' '}
+                <span className="pd-muted">
+                  {t(option.status)}
+                  {option.archived ? ` · ${t('dependencyArchived')}` : ''}
+                </span>
+              </span>
+            </label>
+          )
+        })
+      ) : (
+        <p className="pd-muted">{t('dependencyNoCandidates')}</p>
+      )}
+    </fieldset>
+  )
+}
+function ResourceKeyEditor({
+  value,
+  change,
+  t,
+  disabled,
+}: {
+  value: string[]
+  change: (value: string[]) => void
+  t: Injected['t']
+  disabled: boolean
+}) {
+  const [draft, setDraft] = useState(''),
+    [error, setError] = useState('')
+  const trimmed = draft.trim()
+  const liveProblem = trimmed ? resourceKeyProblem(trimmed) : null
+  const add = () => {
+    const key = draft.trim()
+    if (!key) return
+    const problem = resourceKeyProblem(key)
+    if (problem) {
+      setError(t('resourceKeyInvalid'))
+      return
+    }
+    if (value.includes(key)) {
+      setError(t('resourceKeyInvalid'))
+      return
+    }
+    if (value.length >= MAX_RESOURCE_KEYS) {
+      setError(t('resourceKeyLimit'))
+      return
+    }
+    change([...value, key])
+    setDraft('')
+    setError('')
+  }
+  return (
+    <fieldset className="pd-criteria-editor pd-resource-editor">
+      <legend>{t('resourceKeys')}</legend>
+      <p className="pd-muted">{t('resourceKeyHelp')}</p>
+      <div className="pd-actions">
+        <input
+          aria-label={t('resourceKeys')}
+          placeholder={t('resourceKeyPlaceholder')}
+          maxLength={128}
+          value={draft}
+          disabled={disabled}
+          aria-invalid={!!liveProblem || !!error}
+          onChange={(event) => {
+            setDraft(event.target.value)
+            setError('')
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              add()
+            }
+          }}
+        />
+        <button
+          type="button"
+          disabled={disabled || !trimmed || value.length >= MAX_RESOURCE_KEYS}
+          onClick={add}
+        >
+          {t('addResourceKey')}
+        </button>
+      </div>
+      {(liveProblem || error) && (
+        <p role="alert" className="pd-muted">
+          {error || t('resourceKeyInvalid')}
+        </p>
+      )}
+      {value.length > 0 && (
+        <div className="pd-card-tags">
+          {value.map((key) => (
+            <span className="pd-badge" key={key}>
+              <code>{key}</code>
+              <button
+                type="button"
+                aria-label={`${t('removeResourceKey')} ${key}`}
+                disabled={disabled}
+                onClick={() => change(value.filter((candidate) => candidate !== key))}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </fieldset>
+  )
+}
 function CreateForm({
   t,
   workspaces,
+  tasks,
   sessions,
   selectedWorkspace,
   busy,
@@ -1495,6 +2011,7 @@ function CreateForm({
     title: string
     sessionIds: readonly string[]
   }[]
+  tasks: readonly CoordinationTask[]
   sessions: readonly { id: string; displayTitle: string }[]
   selectedWorkspace: string
   busy: boolean
@@ -1516,6 +2033,8 @@ function CreateForm({
     [assignee, setAssignee] = useState(''),
     [intake, setIntake] = useState(true),
     [needsManual, setNeedsManual] = useState(false),
+    [dependencies, setDependencies] = useState<string[]>([]),
+    [resourceKeys, setResourceKeys] = useState<string[]>([]),
     [completionPolicy, setCompletionPolicy] = useState<CompletionPolicy>({
       mode: 'reviewed',
       instructions: '',
@@ -1534,6 +2053,8 @@ function CreateForm({
         completionPolicy.mode !== 'reviewed' ||
         priority !== 1 ||
         assignee ||
+        dependencies.length ||
+        resourceKeys.length ||
         !intake ||
         needsManual ||
         ws !== (selectedWorkspace || workspaces[0]?.workspaceId || '')
@@ -1547,6 +2068,8 @@ function CreateForm({
     completionPolicy,
     priority,
     assignee,
+    dependencies,
+    resourceKeys,
     intake,
     needsManual,
     dirty,
@@ -1577,6 +2100,8 @@ function CreateForm({
           needsManual,
           completionPolicy,
           language: language(),
+          dependencies,
+          resourceKeys,
           inputImages: images.entries.flatMap((entry) =>
             entry.kind === 'draft' ? [entry.draft] : [],
           ),
@@ -1589,6 +2114,7 @@ function CreateForm({
         change={(id) => {
           setWs(id)
           setAssignee('')
+          setDependencies([])
         }}
         options={workspaces.map((w) => ({
           value: w.workspaceId,
@@ -1640,9 +2166,7 @@ function CreateForm({
           required={!intake}
           aria-label={t(intake ? 'criteriaOptional' : 'criteria')}
           value={criteria}
-          onPaste={
-            imageInputAvailable ? images.paste('criteria') : undefined
-          }
+          onPaste={imageInputAvailable ? images.paste('criteria') : undefined}
           onChange={(e) => setCriteria(e.target.value)}
         />
       </label>
@@ -1660,6 +2184,21 @@ function CreateForm({
           fieldLabel={t(intake ? 'criteriaOptional' : 'criteria')}
         />
       ) : null}
+      <DependencyEditor
+        tasks={tasks}
+        workspaceId={ws}
+        selfId={null}
+        value={dependencies}
+        change={setDependencies}
+        t={t}
+        disabled={busy}
+      />
+      <ResourceKeyEditor
+        value={resourceKeys}
+        change={setResourceKeys}
+        t={t}
+        disabled={busy}
+      />
       <OptionGroup
         label={t('priority')}
         value={priority}
@@ -1730,10 +2269,14 @@ type EditableTask = Pick<
   | 'priority'
   | 'completionPolicy'
   | 'needsManual'
+  | 'dependencies'
+  | 'resourceKeys'
 >
 const editable = (task: Task): EditableTask => ({
   title: task.title,
   criteria: task.criteria,
+  dependencies: [...task.dependencies],
+  resourceKeys: [...task.resourceKeys],
   // The edit draft starts from the localized display text, so the next owner
   // save persists the Chinese marker without rewriting storage on load.
   description: normalizeDescription(
@@ -1750,6 +2293,7 @@ const editable = (task: Task): EditableTask => ({
 })
 function TaskEditor({
   task,
+  tasks,
   t,
   busy,
   limits,
@@ -1759,6 +2303,7 @@ function TaskEditor({
   dirty: reportDirty,
 }: {
   task: Task
+  tasks: readonly CoordinationTask[]
   t: Injected['t']
   busy: boolean
   limits: ImageInputLimits
@@ -1916,6 +2461,21 @@ function TaskEditor({
           fieldLabel={t('criteriaItems')}
         />
       ) : null}
+      <DependencyEditor
+        tasks={tasks}
+        workspaceId={task.workspaceId}
+        selfId={task.id}
+        value={draft.dependencies}
+        change={(value) => change('dependencies', value)}
+        t={t}
+        disabled={busy}
+      />
+      <ResourceKeyEditor
+        value={draft.resourceKeys}
+        change={(value) => change('resourceKeys', value)}
+        t={t}
+        disabled={busy}
+      />
       <label className="pd-field">
         {t('priority')}
         <select

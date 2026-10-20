@@ -152,6 +152,20 @@ class SimulationAdapter extends LlmAdapter {
             risk: 'low',
             route: 'express',
             questions: [],
+            coordination: {
+              dependencies: data.dependencies ?? [],
+              resourceKeys: data.resourceKeys ?? [],
+              dependencyOrder: [
+                ...(data.dependencies ?? []),
+                data.taskId,
+              ],
+              resourceConflicts: [],
+              isolation: (data.dependencies ?? []).length ||
+                (data.resourceKeys ?? []).length
+                ? 'workspace'
+                : 'none',
+              mergeRisk: 'low',
+            },
           },
         })
     } else if (phase === 'review' && data) {
@@ -224,7 +238,11 @@ class SimulationAdapter extends LlmAdapter {
             '验证真实 DSH 工作区工具',
           ),
         })
-      else if (toolResults.length === 1)
+      else if (toolResults.length === 1) {
+        // A deterministic slow lane makes bounded concurrency observable in the
+        // native lane without changing Host or dispatcher semantics.
+        if (data.description.includes('PERSE_LANE_SLOW'))
+          await new Promise((resolve) => setTimeout(resolve, 4000))
         block = call('dashboard_report', {
           taskId: data.taskId,
           expectedVersion: data.version,
@@ -242,6 +260,7 @@ class SimulationAdapter extends LlmAdapter {
               ]
             : [],
         })
+      }
     } else if (phase === 'handoff') {
       const id = user.match(/taskId "([^"]+)"/)
       if (!toolResults.length)

@@ -8,6 +8,7 @@ import {
 } from '@deepseek-ai/dsh-typert-protocol'
 import { defineDomain } from '@deepseek-ai/dsh-storage-domain'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { z } from 'zod'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
@@ -29,6 +30,11 @@ import {
   taskImageLimits,
 } from './host/images.ts'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import {
+  createPermissionCapability,
+  type PermissionCapability,
+  type PermissionCapabilityHost,
+} from './host/permission-capability.ts'
 import type {
   CreateRequest,
   UpdateRequest,
@@ -39,6 +45,11 @@ import type {
   InputImage,
   InputImageDraft,
   InputImageUpdate,
+  LaneRequest,
+  PermissionApplyPreview,
+  PermissionApplyPreviewRequest,
+  PermissionApplyRequest,
+  PermissionApplyResult,
   Task,
   TaskCommand,
 } from './contract/types.ts'
@@ -52,9 +63,15 @@ export const inject = [
   'storageDomain',
   'workspaceRegistry',
   'sessionController',
+  'sessions',
   'agents',
   'tools',
 ]
+const taskCommandSchema = z.strictObject({
+  requestId: z.string().min(1).max(150),
+  id: z.string(),
+  expectedVersion: z.number().int().positive(),
+})
 const spec = defineDomain({
   name: 'perse_dashboard',
   version: 1,
@@ -65,9 +82,9 @@ export class DashboardService extends TypertRemoteService {
   private board!: BoardController
   private dispatcher!: Dispatcher
   private completion!: CompletionCoordinator
+  private permissions!: PermissionCapability
   private runtime!: DispatchRuntime
   private stopped = false
-  private analyses = new Set<string>()
   private listeners = new Set<() => void>()
   constructor(ctx: Context) {
     super(ctx, 'perseDashboard')
@@ -115,8 +132,7 @@ export class DashboardService extends TypertRemoteService {
         this.ctx.agents.get(sessionId as never)?.status === 'running',
       readImage: async (image) => {
         const store = this.attachmentStore()
-        if (!store)
-          throw new Error('DSH attachment capability is unavailable')
+        if (!store) throw new Error('DSH attachment capability is unavailable')
         const stored = await store.readImage({
           attachmentId: image.attachmentId as never,
           mediaType: image.mediaType,
@@ -182,6 +198,9 @@ export class DashboardService extends TypertRemoteService {
     )
     this.dispatcher = new Dispatcher(this.board, this.runtime, notify, (id) =>
       this.completion.finish(id),
+    )
+    this.permissions = createPermissionCapability(
+      this.ctx as unknown as PermissionCapabilityHost,
     )
     this.ctx.on('agent/status', () => this.dispatcher.wake())
     this.ctx.effect(
@@ -297,7 +316,11 @@ export class DashboardService extends TypertRemoteService {
   @Remote
   async snapshot(): Promise<DashboardSnapshot> {
     this.owner()
-    const { receipts, ...snapshot } = this.board.snapshot()
+    const {
+      receipts: _receipts,
+      settingsReceipts: _settingsReceipts,
+      ...snapshot
+    } = this.board.snapshot()
     return {
       ...snapshot,
       dispatch: this.dispatcher.snapshot(),
@@ -311,6 +334,24 @@ export class DashboardService extends TypertRemoteService {
       },
       imageLimits: this.imageInputLimits(),
     }
+  }
+  /** Owner-only read-only classification of the current Host before an apply. */
+  @Remote
+  async permissionPreview(
+    request: PermissionApplyPreviewRequest,
+  ): Promise<PermissionApplyPreview> {
+    return this.protect(async () => this.permissions.preview(request ?? {}))
+  }
+  /**
+   * Owner-only, explicitly confirmed one-shot apply of the saved default
+   * permission to preview targets. It never saves defaults, decides approvals,
+   * retries failures or writes anything beyond the official permission API.
+   */
+  @Remote
+  async permissionApply(
+    request: PermissionApplyRequest,
+  ): Promise<PermissionApplyResult> {
+    return this.protect(async () => this.permissions.apply(request))
   }
   @Remote
   async create(request: CreateRequest): Promise<Task> {
@@ -335,9 +376,11 @@ export class DashboardService extends TypertRemoteService {
           current?.analysisSessionId,
           current?.reviewSessionId,
         ].some((id) => id && this.runtime.running(id)) ||
-          this.dispatcher.snapshot().activeTaskId === request.id ||
+          this.dispatcher
+            .snapshot()
+            .active.some((slot) => slot.taskId === request.id) ||
           this.completion.active(request.id) ||
-          this.analyses.has(request.id)) &&
+          this.dispatcher.analysis.current() === request.id) &&
         ['move', 'accept', 'archive', 'assign', 'edit', 'retry'].includes(
           request.action,
         )
@@ -356,104 +399,148 @@ export class DashboardService extends TypertRemoteService {
       })
     })
   }
+  /** Owner-only persisted execution lane count; never part of dispatch commands. */
+  @Remote
+  async setAutomationLanes(
+    request: LaneRequest,
+  ): Promise<{ workspaceId: string; lanes: number; revision: number }> {
+    return this.protect(async () => this.board.setLanes(request))
+  }
   @Remote
   async dispatch(request: DispatchRequest): Promise<DispatchState> {
     return this.protect(async () => {
-      if (!this.ctx.workspaceRegistry.get(request.workspaceId as never))
+      const parsed = z
+        .strictObject({
+          workspaceId: z.string().min(1),
+          enabled: z.boolean(),
+          watch: z.boolean().optional(),
+          maxTasks: z.number().int().min(1).max(100).optional(),
+        })
+        .parse(request)
+      if (!this.ctx.workspaceRegistry.get(parsed.workspaceId as never))
         throw new BoardError('workspace-missing', 'Workspace is unavailable')
       return this.dispatcher.configure(
-        request.workspaceId,
-        request.enabled,
-        request,
+        parsed.workspaceId,
+        parsed.enabled,
+        parsed,
       )
     })
   }
   @Remote
   async analyze(request: TaskCommand): Promise<Task> {
     return this.protect(async () => {
-      const old = this.board.snapshot().tasks.find((t) => t.id === request.id)
-      if (!old || old.version !== request.expectedVersion)
+      const command = taskCommandSchema.parse(request)
+      const old = this.board.snapshot().tasks.find((t) => t.id === command.id)
+      if (!old || old.version !== command.expectedVersion)
         throw new BoardError('conflict', 'Issue changed')
       if (
         [old.sessionId, old.analysisSessionId, old.reviewSessionId].some(
           (id) => id && this.runtime.running(id),
         ) ||
-        this.dispatcher.snapshot().activeTaskId === request.id ||
-        this.completion.active(request.id) ||
-        this.analyses.has(request.id)
+        this.dispatcher
+          .snapshot()
+          .active.some((slot) => slot.taskId === command.id) ||
+        this.completion.active(command.id) ||
+        this.dispatcher.analysis.current() === command.id
       )
         throw new BoardError('busy', 'Stop the linked Agent before reanalyzing')
-      const prepared = await this.board.update({
-        ...request,
-        action: 'move',
-        status: 'triage',
-      })
-      const id = await this.runtime.create(prepared.workspaceId)
-      const task = await this.board.beginAnalysis(
-        id,
-        prepared.id,
-        prepared.version,
-      )
-      const refusal = task.inputImages.length
-        ? imageRouteRefusal(task, await this.runtime.imageRoute(id))
-        : null
-      if (refusal)
-        return this.board.update({
-          requestId: crypto.randomUUID(),
-          id: task.id,
-          expectedVersion: task.version,
-          action: 'move',
-          status: 'blocked',
-          evidence: refusal,
-        })
-      this.analyses.add(task.id)
-      void runPhase(
-        this.board,
-        this.runtime,
-        task,
-        id,
-        'analysis',
-        analysisPrompt(task),
-        () => this.stopped,
-      )
-        .then(async () => {
-          if (this.stopped) return
-          const now = this.board.snapshot().tasks.find((t) => t.id === task.id)
-          if (now?.status === 'triage' && now.analysisSessionId === id)
-            await this.board.update({
-              requestId: crypto.randomUUID(),
-              id: now.id,
-              expectedVersion: now.version,
-              action: 'move',
-              status: 'blocked',
-              evidence:
-                'Analysis Agent stopped without a structured report after one reminder',
-            })
-        })
-        .catch(async (error) => {
-          this.ctx.logger.warn(error)
-          if (this.stopped) return
-          const now = this.board.snapshot().tasks.find((t) => t.id === task.id)
-          if (now?.status === 'triage' && now.analysisSessionId === id)
-            await this.board.update({
-              requestId: crypto.randomUUID(),
-              id: now.id,
-              expectedVersion: now.version,
-              action: 'move',
-              status: 'blocked',
-              evidence: String(error),
-            })
-        })
-        .finally(() => this.analyses.delete(task.id))
-        .catch((error) => this.ctx.logger.warn(error))
-      return task
+      if (!this.dispatcher.analysis.acquire(command.id))
+        throw new BoardError(
+          'busy',
+          'Another analysis is already running; analysis is globally serial',
+        )
+      try {
+        return await this.startManualAnalysis(command)
+      } catch (error) {
+        this.dispatcher.analysis.release(command.id)
+        this.dispatcher.wake()
+        throw error
+      }
     })
+  }
+  /** Prepare, bind and run one owner-triggered analysis under the shared gate. */
+  private async startManualAnalysis(request: TaskCommand): Promise<Task> {
+    const old = this.board.snapshot().tasks.find((t) => t.id === request.id)
+    if (!old || old.version !== request.expectedVersion)
+      throw new BoardError('conflict', 'Issue changed')
+    const prepared = await this.board.update({
+      ...request,
+      action: 'move',
+      status: 'triage',
+    })
+    const id = await this.runtime.create(prepared.workspaceId)
+    const task = await this.board.beginAnalysis(
+      id,
+      prepared.id,
+      prepared.version,
+    )
+    const refusal = task.inputImages.length
+      ? imageRouteRefusal(task, await this.runtime.imageRoute(id))
+      : null
+    if (refusal) {
+      this.dispatcher.analysis.release(request.id)
+      this.dispatcher.wake()
+      return this.board.update({
+        requestId: crypto.randomUUID(),
+        id: task.id,
+        expectedVersion: task.version,
+        action: 'move',
+        status: 'blocked',
+        evidence: refusal,
+      })
+    }
+    void runPhase(
+      this.board,
+      this.runtime,
+      task,
+      id,
+      'analysis',
+      analysisPrompt(task),
+      () => this.stopped,
+    )
+      .then(async () => {
+        if (this.stopped) return
+        const now = this.board.snapshot().tasks.find((t) => t.id === task.id)
+        if (now?.status === 'triage' && now.analysisSessionId === id)
+          await this.board.update({
+            requestId: crypto.randomUUID(),
+            id: now.id,
+            expectedVersion: now.version,
+            action: 'move',
+            status: 'blocked',
+            evidence:
+              'Analysis Agent stopped without a structured report after one reminder',
+          })
+      })
+      .catch(async (error) => {
+        this.ctx.logger.warn(error)
+        if (this.stopped) return
+        const now = this.board.snapshot().tasks.find((t) => t.id === task.id)
+        if (now?.status === 'triage' && now.analysisSessionId === id)
+          await this.board.update({
+            requestId: crypto.randomUUID(),
+            id: now.id,
+            expectedVersion: now.version,
+            action: 'move',
+            status: 'blocked',
+            evidence: String(error),
+          })
+      })
+      .catch((error) => this.ctx.logger.warn(error))
+      .finally(() => {
+        this.dispatcher.analysis.release(request.id)
+        this.dispatcher.wake()
+      })
+    return task
   }
   @Remote
   async verify(request: TaskCommand): Promise<Task> {
     return this.protect(async () => {
-      const task = this.board.snapshot().tasks.find((t) => t.id === request.id)
-      if (!task || task.version !== request.expectedVersion)
+      const command = taskCommandSchema.parse(request)
+      const task = this.board
+        .snapshot()
+        .tasks.find((t) => t.id === command.id)
+      if (!task || task.version !== command.expectedVersion)
         throw new BoardError('conflict', 'Task changed')
       if (task.status !== 'in-review' || task.archived)
         throw new BoardError(
@@ -534,7 +621,7 @@ export class DashboardService extends TypertRemoteService {
       defineTool({
         name: 'dashboard_claim_next',
         description:
-          'Atomically claim the next eligible dashboard task in your current DSH workspace, or a specified task; repeated calls keep your active claim.',
+          'Atomically claim the next eligible dashboard task in your current DSH workspace, or a specified task. Dependencies must all be done; a resource key already held by an in-progress task (same workspace) blocks the claim without preemption. Repeated calls keep your active claim.',
         parameters: {
           taskId: { type: 'string', description: 'Optional exact task id.' },
         },
@@ -660,6 +747,35 @@ export class DashboardService extends TypertRemoteService {
                 required: true,
               },
               questions: { ...stringList, required: true },
+              coordination: {
+                type: 'object',
+                additionalProperties: false,
+                description:
+                  'Optional machine-readable coordination suggestions. The Host validates them but never writes them into Task dependencies or resource keys.',
+                properties: {
+                  dependencies: { ...stringList, required: true },
+                  resourceKeys: { ...stringList, required: true },
+                  dependencyOrder: { ...stringList, required: true },
+                  resourceConflicts: {
+                    type: 'array',
+                    required: true,
+                    items: {
+                      type: 'object',
+                      additionalProperties: false,
+                      properties: {
+                        key: { type: 'string', required: true },
+                        taskIds: { ...stringList, required: true },
+                      },
+                    },
+                  },
+                  isolation: {
+                    type: 'string',
+                    enum: ['none', 'workspace', 'manual-workspace'],
+                    required: true,
+                  },
+                  mergeRisk: { ...risk, required: true },
+                },
+              },
             },
           },
         },
@@ -669,6 +785,10 @@ export class DashboardService extends TypertRemoteService {
             await service.board.triage(exec.agent.session.id, {
               requestId: crypto.randomUUID(),
               ...args,
+              analysis: {
+                ...args.analysis,
+                coordination: args.analysis.coordination ?? null,
+              },
             }),
           )
         },

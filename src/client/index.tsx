@@ -11,7 +11,10 @@ import REMOTE from 'perse-dashboard/remote'
 import { en, zh } from './locales.ts'
 import { CSS } from './style.ts'
 import { createDashboardStore } from './store.ts'
-import { permissionControls } from './permission-api.ts'
+import {
+  existingPermissionControls,
+  permissionControls,
+} from './permission-api.ts'
 import type { PermissionControls } from './permissions.tsx'
 import { Dashboard, DashboardIcon, type Injected } from './view.tsx'
 import { handoffPrompt } from './handoff.ts'
@@ -76,7 +79,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         },
       })
       const store = createDashboardStore()
-      let permissionProvider: PermissionControls | undefined
+      let permissionProvider:
+        | Pick<PermissionControls, 'loadPermissions' | 'savePermissionDefault'>
+        | undefined
       // Optional capability fiber: missing settings must not hide the task board.
       scope.inject(
         ['remote.permissionPresets', 'remote.settings'],
@@ -98,6 +103,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         },
       )
       const permissions: PermissionControls = {
+        ...existingPermissionControls({
+          permissionPreview: (request) =>
+            scope.remote.perseDashboard.permissionPreview(request),
+          permissionApply: (request) =>
+            scope.remote.perseDashboard.permissionApply(request),
+        }),
         async loadPermissions() {
           if (!permissionProvider)
             throw Error('DSH permission settings are unavailable')
@@ -135,6 +146,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         },
         dispatch: async (request) => {
           const result = await scope.remote.perseDashboard.dispatch(request)
+          if (!result.ok) throw result.error
+          return result.value
+        },
+        setAutomationLanes: async (request) => {
+          const result =
+            await scope.remote.perseDashboard.setAutomationLanes(request)
           if (!result.ok) throw result.error
           return result.value
         },

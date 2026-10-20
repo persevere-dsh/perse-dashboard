@@ -67,6 +67,7 @@ async function reset(id) {
   backend = await makeBackend(path.join(root, String(generation)), {
     seed,
     persist: true,
+    scenario: id,
   })
   backend.events.on('change', () => {
     serial = serial.then(publish).catch(console.error)
@@ -127,6 +128,16 @@ const server = http.createServer(async (req, res) => {
             body.revision,
           ),
         })
+      if (url.pathname === '/permission-apply/preview')
+        return json(res, {
+          ok: true,
+          value: await backend.permissionPreview(body),
+        })
+      if (url.pathname === '/permission-apply/apply')
+        return json(res, {
+          ok: true,
+          value: await backend.permissionApply(body),
+        })
       if (url.pathname === '/control') {
         if (body.scenario) await reset(body.scenario)
         if (body.action === 'recover') {
@@ -185,6 +196,7 @@ const server = http.createServer(async (req, res) => {
             'create',
             'update',
             'dispatch',
+            'setAutomationLanes',
             'analyze',
             'verify',
             'image',
@@ -217,7 +229,18 @@ const server = http.createServer(async (req, res) => {
     }
     json(res, { error: 'Not found' }, 404)
   } catch (e) {
-    if (!res.headersSent) json(res, { ok: false, error: e.message }, 409)
+    if (!res.headersSent)
+      json(
+        res,
+        {
+          ok: false,
+          error:
+            e && typeof e.code === 'string'
+              ? `${e.code}: ${e.message}`
+              : e.message,
+        },
+        409,
+      )
     else res.end()
   }
 })

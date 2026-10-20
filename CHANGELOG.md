@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.7.0
+
+- Add bounded multi-lane automation: each workspace persists an execution lane count (default 2, range 1–4) through the owner-only `setAutomationLanes` command; analysis stays globally serial, execution runs concurrently up to the persisted lanes, and `maxTasks` remains the shared activation budget. Lowering lanes never preempts running work, and restart keeps stale in-progress claims fail-closed until owner retry.
+- Add owner-declared `Task.dependencies` and `Task.resourceKeys` with same-workspace, known-task, self and cycle rejection; dependencies must all be done before a claim, and an in-progress resource holder blocks other tasks sharing that key without preemption. Empty key sets are disjoint; earlier runnable same-key tasks cannot be overtaken by higher priority, but earlier tasks that cannot run do not block later candidates.
+- Add `Analysis.coordination` with machine-readable `dependencies`, `resourceKeys`, `dependencyOrder`, `resourceConflicts`, `isolation` and `mergeRisk`. The Host validates suggestions and exposes them in the triage tool schema, prompts and task detail, but never writes them into the task.
+- Block not-started transitive successors with a stable `dependency-invalidated:<taskId>:<status>` note when a dependency becomes blocked, needs-info, archived or reopened; running successors keep running with attention and are never stopped or auto-started. Owner retry clears the note.
+- Add dependency/resource multi-select and instant key validation to create/edit, a persisted lane control in the automation panel, bilingual card/detail markers for dependency waiting, resource holders and invalidation attention, and machine-note localization.
+- Keep storage version 1: legacy tasks default to empty dependencies/resource keys and legacy analyses to `coordination: null`; legacy boards resolve to two lanes. Persisted records and old snapshots tolerate unknown fields while create/update/dispatch/`setAutomationLanes` commands remain strict.
+- Add coordination contract tests for validation, gating, same-key ordering, invalidation, suggestions, lanes persistence/migration and unknown fields; add lane concurrency/dispatch tests for two-lane overlap, serial lanes, key serialization, dependency admission, single-lane failure isolation, stale claims, the shared analysis gate and shared budget; extend Lab and the native lane with dependency/resource/lane-cap/failure-isolation/restart journeys. No worktree registry, automatic merge or git/merge permission is introduced.
+
+- Add an explicit owner-only “apply to existing Sessions” action beside the DSH default permission control. Saving the default remains future-Sessions-only; applying is a separate preview, acknowledgement and one-shot confirmation.
+- `permissionPreview` classifies current Host live Sessions in registered workspaces into targets, excluded (running, pending approval/question/plan-review, already at target) and unsupported (archived, cold, child, other workspace), with target count, workspace scope and per-Session reasons.
+- `permissionApply` revalidates the captured `permission.defaultPreset` Settings revision and preset, refuses bulk `danger-full-access`, writes only through `PermissionPresetService.set`, reads each target's effective preset/sandbox/approval back, and returns applied/skipped/failed. Failures are visible, never retried, and no pending decision is approved, rejected or answered. No Session log, configuration file, private database or board ledger is written by the plugin.
+- Add contract tests for preview classification, stale revision, full-access refusal, duplicate/idempotent targets, partial write failure, read-back mismatch and missing services; extend Lab and the native lane with real permission apply, read-back and unchanged-existing-Session evidence.
+- Document the DSH 0.2.1 Session-log boundary: a 0.2.0 Host skips this pinned plugin and refuses logs containing `job/registered`, so the remedy is to launch the 0.2.1 runtime rather than downgrade or edit logs.
+- Require install verification against the exact DSH app the owner runs, including Session resume, a new real-model turn and a client reload.
+
 ## 1.6.1
 
 - Clear the pre-acceptance machine note when the owner accepts a task, and never present that note on a completed task. Legacy completed rows with the old note are normalized on read.
@@ -22,11 +39,6 @@
 - Send ordered labelled image content parts in analysis, execution and independent review prompts; `TASK_DATA` gains metadata only, and the bounded repair reminder stays text-only so image parts are never duplicated.
 - Block an image-bearing task with a visible capability message when its selected model route is text-only instead of letting the route silently replace images with placeholders.
 - Add contract coverage for input defaults/migration, create/update idempotency, edit invalidation of analysis/review/completion, prompt ordering and attachment-read confinement, plus a native browser journey that verifies every phase request contains image blocks whose SHA-256 equals the uploaded fixtures. Storage stays version 1; old tasks default to no input images.
-
-## Unreleased
-
-- Document the DSH 0.2.1 Session-log boundary: a 0.2.0 Host skips this pinned plugin and refuses logs containing `job/registered`, so the remedy is to launch the 0.2.1 runtime rather than downgrade or edit logs.
-- Require install verification against the exact DSH app the owner runs, including Session resume, a new real-model turn and a client reload.
 
 ## 1.4.2
 

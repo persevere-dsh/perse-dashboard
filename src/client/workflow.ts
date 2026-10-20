@@ -21,8 +21,15 @@ export function completionBlocks(task: Task): Key[] {
     blocks.push('gateChecks')
   return blocks
 }
-export function nextStep(task: Task, running: boolean, queue: boolean): Key {
+export function nextStep(
+  task: Task,
+  running: boolean,
+  queue: boolean,
+  dependency: 'wait' | 'attention' | null = null,
+): Key {
   if (task.archived) return 'nextArchived'
+  if (dependency === 'attention') return 'nextDependencyAttention'
+  if (dependency === 'wait') return 'nextDependencyWait'
   if (task.status === 'done') return 'nextDone'
   if (running) return 'nextRunning'
   if (task.status === 'needs-info') return 'nextClarify'
@@ -46,7 +53,7 @@ export function nextStep(task: Task, running: boolean, queue: boolean): Key {
 export function taskNeedsAction(task: Task, running: boolean, queue: boolean) {
   return (
     !task.archived &&
-    !['nextDone', 'nextRunning', 'nextQueued'].includes(
+    !['nextDone', 'nextRunning', 'nextQueued', 'nextDependencyWait'].includes(
       nextStep(task, running, queue),
     )
   )

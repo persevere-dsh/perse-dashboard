@@ -9,8 +9,12 @@
       "workspaceId": "alpha",
       "title": "Clarify result",
       "description": "Synthetic full-state fixture. All mutations use the production controller.",
-      "criteria": ["Expected result is observable"],
-      "checked": [false],
+      "criteria": [
+        "Expected result is observable"
+      ],
+      "checked": [
+        false
+      ],
       "evidence": "",
       "priority": 0,
       "assignee": null,
@@ -28,8 +32,12 @@
       "workspaceId": "alpha",
       "title": "Choose output format",
       "description": "Synthetic full-state fixture. All mutations use the production controller.",
-      "criteria": ["Expected result is observable"],
-      "checked": [false],
+      "criteria": [
+        "Expected result is observable"
+      ],
+      "checked": [
+        false
+      ],
       "evidence": "",
       "priority": 1,
       "assignee": null,
@@ -43,10 +51,14 @@
       "needsManual": false,
       "analysis": {
         "summary": "Output is ambiguous",
-        "plan": ["Clarify output with owner"],
+        "plan": [
+          "Clarify output with owner"
+        ],
         "risk": "medium",
         "route": "needs-info",
-        "questions": ["Which output format is required?"]
+        "questions": [
+          "Which output format is required?"
+        ]
       },
       "analysisSessionId": "session-alpha-analyst"
     },
@@ -55,8 +67,12 @@
       "workspaceId": "alpha",
       "title": "Implement accepted scope",
       "description": "Synthetic full-state fixture. All mutations use the production controller.",
-      "criteria": ["Expected result is observable"],
-      "checked": [false],
+      "criteria": [
+        "Expected result is observable"
+      ],
+      "checked": [
+        false
+      ],
       "evidence": "",
       "priority": 2,
       "assignee": "session-alpha-builder",
@@ -74,8 +90,12 @@
       "workspaceId": "alpha",
       "title": "Worker already executing",
       "description": "Synthetic full-state fixture. All mutations use the production controller.",
-      "criteria": ["Expected result is observable"],
-      "checked": [false],
+      "criteria": [
+        "Expected result is observable"
+      ],
+      "checked": [
+        false
+      ],
       "evidence": "",
       "priority": 0,
       "assignee": "session-alpha-builder",
@@ -93,8 +113,12 @@
       "workspaceId": "alpha",
       "title": "Waiting for owner input",
       "description": "Synthetic full-state fixture. All mutations use the production controller.",
-      "criteria": ["Expected result is observable"],
-      "checked": [false],
+      "criteria": [
+        "Expected result is observable"
+      ],
+      "checked": [
+        false
+      ],
       "evidence": "Fixture verification evidence",
       "priority": 1,
       "assignee": null,
@@ -112,8 +136,12 @@
       "workspaceId": "beta",
       "title": "Review verified result",
       "description": "Synthetic full-state fixture. All mutations use the production controller.",
-      "criteria": ["Expected result is observable"],
-      "checked": [false],
+      "criteria": [
+        "Expected result is observable"
+      ],
+      "checked": [
+        false
+      ],
       "evidence": "Fixture verification evidence",
       "priority": 2,
       "assignee": null,
@@ -131,8 +159,12 @@
       "workspaceId": "beta",
       "title": "Completed and recorded",
       "description": "Synthetic full-state fixture. All mutations use the production controller.",
-      "criteria": ["Expected result is observable"],
-      "checked": [true],
+      "criteria": [
+        "Expected result is observable"
+      ],
+      "checked": [
+        true
+      ],
       "evidence": "Fixture verification evidence",
       "priority": 0,
       "assignee": null,
@@ -166,8 +198,12 @@
       "workspaceId": "beta",
       "title": "Archived experiment",
       "description": "Synthetic full-state fixture. All mutations use the production controller.",
-      "criteria": ["Expected result is observable"],
-      "checked": [true],
+      "criteria": [
+        "Expected result is observable"
+      ],
+      "checked": [
+        true
+      ],
       "evidence": "Fixture verification evidence",
       "priority": 0,
       "assignee": null,
@@ -315,8 +351,15 @@
     },
     {
       "id": "permission-settings",
-      "description": "Official default settings model, explicit confirmation, optimistic conflict, read-only/unavailable and durable recovery",
-      "seed": "empty"
+      "description": "Official default settings model, explicit confirmation, optimistic conflict, read-only/unavailable, one-shot apply to existing Sessions and durable recovery",
+      "seed": "empty",
+      "assertions": [
+        "saving the default changes only future Sessions; existing Session permissions stay byte-for-byte unchanged",
+        "apply to existing Sessions is a separate owner action with target count, workspace scope, exclusions and unsupported reasons",
+        "cancel, stale revision and full-access refusal perform no permission write",
+        "applied effective permissions are read back; partial failure and read-back mismatch are visible and never retried",
+        "read-only/unavailable settings recovery and the default survive restart"
+      ]
     },
     {
       "id": "input-images",
@@ -335,6 +378,52 @@
         "explicit owner recovery",
         "staged review and human completion gates",
         "structured criteria and image evidence"
+      ]
+    },
+    {
+      "id": "multi-lane-dependencies",
+      "seed": "empty",
+      "assertions": [
+        "dependency is owner-selected through the multi-select form and displayed on card and detail",
+        "a successor is not claimed while its dependency is not done",
+        "accepting the dependency admits the successor without auto-accepting it",
+        "analysis remains serial while execution lanes continue"
+      ]
+    },
+    {
+      "id": "resource-conflict",
+      "seed": "empty",
+      "assertions": [
+        "tasks sharing a resource key never run concurrently",
+        "card and detail show the current in-progress holder",
+        "the key is released when the holder leaves in-progress"
+      ]
+    },
+    {
+      "id": "lane-cap",
+      "seed": "empty",
+      "assertions": [
+        "the persisted lane count bounds concurrent execution",
+        "a lane is reused after the previous task reports",
+        "the third task waits while two lanes are active"
+      ]
+    },
+    {
+      "id": "lane-failure-isolation",
+      "seed": "empty",
+      "assertions": [
+        "one lane failure blocks only its own task",
+        "another running lane still reports evidence",
+        "dispatch pauses new starts with a visible error"
+      ]
+    },
+    {
+      "id": "restart-stale-claim",
+      "seed": "empty",
+      "assertions": [
+        "persisted lanes survive restart",
+        "stale in-progress work keeps its key and is not replayed",
+        "owner retry releases the key without a new recover command"
       ]
     }
   ]

@@ -23,6 +23,9 @@ export class CompletionCoordinator {
   active(id: string) {
     return this.jobs.has(id)
   }
+  busy() {
+    return this.jobs.size > 0
+  }
   close() {
     this.closed = true
   }

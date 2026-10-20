@@ -11,7 +11,8 @@ A native DeepSeek Harness dashboard for assigning work, atomically claiming task
 - View tasks by DSH Workspace, search, priority and archive state.
 - Assign a task to one existing Session, or leave it in the workspace queue.
 - Let agents call `dashboard_claim_next`; the Host chooses one eligible task atomically and binds the actual calling Session.
-- Start an **opt-in, single-worker queue** from the dashboard. It sends tasks through the official Session Controller, uses the Host's configured model and permissions, and stops after 10 tasks, a pause, an error or a missing evidence report.
+- Start an **opt-in queue with 1–4 persisted execution lanes per workspace** (default 2). It sends tasks through the official Session Controller, uses the Host's configured model and permissions, keeps analysis globally serial, and stops after 10 tasks, a pause, an error or a missing evidence report.
+- Declare owner dependencies and `namespace:value` resource keys on create/edit. Dependencies must be done before a claim; a shared key serializes running tasks without preemption. Cards and detail show waiting, current holders and dependency-invalidation attention. v1 uses no worktree registry and never merges code.
 - Follow native Session running/attention state and provider-reported token usage.
 - Prepare an **unsent** native DSH draft, or open a task's linked conversation.
 - Analyze dashboard issues in a dedicated native Session, with express/staged/needs-info/human routing.
@@ -21,6 +22,7 @@ A native DeepSeek Harness dashboard for assigning work, atomically claiming task
 - Configure completion instructions and per-criterion file checks from the task form. See [completion rules](docs/automation.md).
 - Archive, restore and reopen tasks; accepted evidence is frozen until reopening.
 - Keep task language consistent with the DSH UI: new tasks persist `zh`/`en`, legacy tasks infer deterministically, and Chinese tasks get Chinese analysis, execution, review, reminders and machine-note copy. Historical generated text is never silently translated.
+- Save the DSH default permission for future Sessions, and separately preview/apply the saved lower preset to existing live Sessions. The apply action is owner-confirmed, lists target count, workspace scope, exclusions and unsupported Sessions, reads the effective permission back and never answers a pending request. v1 refuses to bulk-apply Full access.
 
 No CDP, DOM rewriting, iframe injection, replacement Agent runtime or separate dashboard HTTP service is involved. The native panel follows DSH locale and theme.
 
@@ -33,9 +35,9 @@ npm ci
 npm run check
 npm pack
 # Standard CLI:
-dsh plugin --profile web add ./perse-dashboard-1.6.1.tgz
+dsh plugin --profile web add ./perse-dashboard-1.7.0.tgz
 # This Mac's installed DSH Desktop CLI, if dsh is not on PATH:
-scripts/dsh plugin --profile desktop add ./perse-dashboard-1.6.1.tgz
+scripts/dsh plugin --profile desktop add ./perse-dashboard-1.7.0.tgz
 ```
 
 Restart the selected DSH instance after installing. Open **Dashboard** from its native sidebar. Installation is always tarball based; do not use `npm link` or a directory dependency. `scripts/dsh` only forwards to the unmodified CLI; it does not patch the application.
@@ -44,7 +46,7 @@ The plugin and its Session history require DSH **0.2.1-rc.2**. If the sidebar ha
 
 ## Agent workflow
 
-Create a task with its intended result and acceptance criteria. Choose **Prepare DSH draft** and send it after reviewing the prompt, or enable **Start queue** for the selected workspace.
+Create a task with its intended result and acceptance criteria. Optionally select dependencies in the same workspace and enter resource keys such as `file:src/index.ts` or `port:3000`. Choose **Prepare DSH draft** and send it after reviewing the prompt, or enable **Start queue** for the selected workspace. The lane control persists per workspace and never preempts running tasks.
 
 An agent can also consume the workspace queue directly:
 

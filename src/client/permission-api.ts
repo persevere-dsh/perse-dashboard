@@ -2,7 +2,41 @@ import type {
   PermissionControls,
   PermissionPreferences,
 } from './permissions.tsx'
+import type {
+  PermissionApplyPreview,
+  PermissionApplyRequest,
+  PermissionApplyResult,
+  PermissionPendingFact,
+} from '../contract/types.ts'
 type Result<T> = { ok: true; value: T } | { ok: false; error: unknown }
+interface ExistingPermissionRemote {
+  permissionPreview(request: {
+    pending?: PermissionPendingFact[]
+  }): Promise<Result<PermissionApplyPreview>>
+  permissionApply(
+    request: PermissionApplyRequest,
+  ): Promise<Result<PermissionApplyResult>>
+}
+/** Owner-only preview/apply adapters; one call per explicit confirmation, never retried. */
+export function existingPermissionControls(
+  remote: ExistingPermissionRemote,
+): Pick<
+  PermissionControls,
+  'previewExistingPermissions' | 'applyExistingPermissions'
+> {
+  return {
+    async previewExistingPermissions(pending = []) {
+      const result = await remote.permissionPreview({ pending })
+      if (!result.ok) throw result.error
+      return result.value
+    },
+    async applyExistingPermissions(request) {
+      const result = await remote.permissionApply(request)
+      if (!result.ok) throw result.error
+      return result.value
+    },
+  }
+}
 interface PermissionRemote {
   catalog(): Promise<
     Result<{
@@ -25,7 +59,7 @@ interface PermissionRemote {
 /** Restrict writes to one official Settings field, with advertised targets and revision fencing. */
 export function permissionControls(
   remote: PermissionRemote,
-): PermissionControls {
+): Pick<PermissionControls, 'loadPermissions' | 'savePermissionDefault'> {
   const loadPermissions = async (): Promise<PermissionPreferences> => {
     const [catalog, settings] = await Promise.all([
       remote.catalog(),

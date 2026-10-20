@@ -1,5 +1,6 @@
 /** Localized presentation of Host machine notes; stored tokens stay unchanged. */
 import type { Key } from './locales.ts'
+import { parseDependencyNote } from '../contract/coordination.ts'
 type Translate = (key: Key) => string
 const HUMAN_ACCEPTANCE = 'human-acceptance-required'
 const HUMAN_IMPLEMENTATION = 'Human implementation required'
@@ -28,6 +29,25 @@ export function automationNoteText(note: string, t: Translate): string {
   if (note === 'phase-report-missing') return t('phaseMissingNote')
   if (note === 'review-failed') return t('reviewFailedNote')
   if (note === 'review-report-missing') return t('reviewMissingNote')
+  const dependency = parseDependencyNote(note)
+  if (dependency) {
+    const statuses = [
+      'triage',
+      'needs-info',
+      'todo',
+      'in-progress',
+      'blocked',
+      'in-review',
+      'done',
+    ] as const
+    const status =
+      dependency.status === 'archived'
+        ? t('dependencyArchived')
+        : (statuses as readonly string[]).includes(dependency.status)
+          ? t(dependency.status as (typeof statuses)[number])
+          : dependency.status
+    return `${t('machineDependencyInvalidated')} ${dependency.taskId.slice(0, 8)} (${status})`
+  }
   // Needs-info notes carry model-authored questions; never translate content.
   return note
 }

@@ -13,6 +13,11 @@ import {
 } from '../../lib/types/host/images.js'
 import { Dispatcher } from '../../lib/types/host/dispatch.js'
 import { CompletionCoordinator } from '../../lib/types/host/completion.js'
+import {
+  permissionApply,
+  permissionApplyPreview,
+  permissionPendingReason,
+} from '../../lib/types/host/permission-apply.js'
 import { permissionControls } from '../../lib/types/client/permission-api.js'
 import { mkdir, writeFile, readFile, rename } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
@@ -20,7 +25,7 @@ import path from 'node:path'
 import { EventEmitter } from 'node:events'
 export async function makeBackend(
   directory,
-  { seed = [], scripts = {}, persist = false } = {},
+  { seed = [], scripts = {}, persist = false, scenario = '' } = {},
 ) {
   const events = new EventEmitter(),
     workspaces = [],
@@ -28,12 +33,17 @@ export async function makeBackend(
     history = new Map(),
     jobs = new Map(),
     running = new Set(),
-    gates = new Map()
+    gates = new Map(),
+    archivedSessionIds = []
   let closed = false
   let permissionDefault = 'workspace-write',
     permissionRevision = 0,
     permissionWritable = true,
-    permissionAvailable = true
+    permissionAvailable = true,
+    permissionFailSessionId = null,
+    permissionMismatchSessionId = null,
+    permissionLastResult = null
+  const permissionAttempts = new Map()
   for (const id of ['alpha', 'beta']) {
     const folder = path.join(directory, id)
     await mkdir(folder, { recursive: true })
@@ -44,19 +54,25 @@ export async function makeBackend(
       sessionIds: [],
     })
   }
-  const addSession = (ws, id = `session-${crypto.randomUUID()}`) => {
-    workspaces.find((w) => w.id === ws).sessionIds.push(id)
+  const addSession = (
+    ws,
+    id = `session-${crypto.randomUUID()}`,
+    preset = permissionDefault,
+  ) => {
+    const workspace = workspaces.find((w) => w.id === ws)
+    if (!workspace.sessionIds.includes(id)) workspace.sessionIds.push(id)
+    if (sessions.has(id)) return id
     sessions.set(id, {
       id,
       workspaceId: ws,
       displayTitle: id,
-      cwd: workspaces.find((w) => w.id === ws).path,
+      cwd: workspace.path,
       updatedAt: Date.now(),
       running: false,
       imageCapable: true,
       projectionValues: {
         tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        permissions: { currentValue: permissionDefault },
+        permissions: { currentValue: preset },
       },
     })
     return id
@@ -88,7 +104,8 @@ export async function makeBackend(
       for (const ws of workspaces) ws.sessionIds = []
       running.clear()
       for (const session of saved.sessions) {
-        addSession(session.workspaceId, session.id)
+        if (workspaces.some((w) => w.id === session.workspaceId))
+          addSession(session.workspaceId, session.id)
         sessions.set(session.id, {
           ...session,
           running: false,
@@ -96,11 +113,60 @@ export async function makeBackend(
         })
       }
       for (const [id, prompts] of saved.history) history.set(id, prompts)
+      for (const savedWorkspace of saved.workspaces ?? []) {
+        const target = workspaces.find((w) => w.id === savedWorkspace.id)
+        if (!target) continue
+        for (const id of savedWorkspace.sessionIds ?? [])
+          if (!target.sessionIds.includes(id)) target.sessionIds.push(id)
+      }
+      for (const id of saved.archivedSessionIds ?? [])
+        if (!archivedSessionIds.includes(id)) archivedSessionIds.push(id)
       permissionDefault = saved.permissionDefault ?? 'workspace-write'
       permissionRevision = saved.permissionRevision ?? 0
     } catch (error) {
       if (error.code !== 'ENOENT') throw error
     }
+  }
+  if (scenario === 'permission-settings') {
+    for (const id of [
+      'session-alpha-builder',
+      'session-alpha-reviewer',
+      'session-alpha-analyst',
+    ])
+      if (sessions.has(id))
+        sessions.get(id).projectionValues.permissions.currentValue = 'read-only'
+    addSession('alpha', 'session-alpha-runner', 'read-only')
+    sessions.get('session-alpha-runner').running = true
+    running.add('session-alpha-runner')
+    addSession('alpha', 'session-alpha-pending', 'read-only')
+    sessions.get('session-alpha-pending').pendingInteraction = {
+      kind: 'approval',
+      key: 'fixture-permission-pending',
+      sessionId: 'session-alpha-pending',
+    }
+    addSession('alpha', 'session-alpha-child', 'read-only')
+    sessions.get('session-alpha-child').parentSessionId =
+      'session-alpha-builder'
+    sessions.get('session-alpha-child').origin = 'subagent'
+    addSession('alpha', 'session-alpha-cold', 'read-only')
+    sessions.delete('session-alpha-cold')
+    addSession('beta', 'session-beta-archived', 'read-only')
+    if (!archivedSessionIds.includes('session-beta-archived'))
+      archivedSessionIds.push('session-beta-archived')
+    if (!sessions.has('session-foreign-live'))
+      sessions.set('session-foreign-live', {
+        id: 'session-foreign-live',
+        workspaceId: null,
+        displayTitle: 'Foreign workspace Session',
+        cwd: path.join(directory, 'foreign'),
+        updatedAt: Date.now(),
+        running: false,
+        imageCapable: true,
+        projectionValues: {
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+          permissions: { currentValue: 'read-only' },
+        },
+      })
   }
   let saving = Promise.resolve()
   const saveRuntime = () => {
@@ -113,6 +179,11 @@ export async function makeBackend(
         JSON.stringify({
           sessions: [...sessions.values()],
           history: [...history],
+          workspaces: workspaces.map((workspace) => ({
+            id: workspace.id,
+            sessionIds: [...workspace.sessionIds],
+          })),
+          archivedSessionIds: [...archivedSessionIds],
           permissionDefault,
           permissionRevision,
         }),
@@ -145,12 +216,12 @@ export async function makeBackend(
   const saveInputImages = (drafts) => {
     if (!drafts?.length) return []
     if (drafts.length > imageLimits.maxImages)
-      throw Error(`image-limit: At most ${imageLimits.maxImages} input images are allowed`)
+      throw Error(
+        `image-limit: At most ${imageLimits.maxImages} input images are allowed`,
+      )
     const decoded = drafts.map((draft) => decodeDraft(draft, imageLimits))
     const saved = decoded.map((image) => {
-      const attachmentId = createHash('sha256')
-        .update(image.data)
-        .digest('hex')
+      const attachmentId = createHash('sha256').update(image.data).digest('hex')
       const ref = {
         attachmentId,
         mediaType: image.mediaType,
@@ -210,6 +281,7 @@ export async function makeBackend(
         value: {
           defaultPreset: permissionDefault,
           defaultOptions: [
+            { value: 'read-only', name: 'Read only' },
             { value: 'workspace-write', name: 'Workspace write' },
             { value: 'danger-full-access', name: 'Full access' },
           ],
@@ -236,7 +308,9 @@ export async function makeBackend(
         ops.length !== 1 ||
         ops[0].op !== 'set' ||
         ops[0].path.join('.') !== 'defaultPreset' ||
-        !['workspace-write', 'danger-full-access'].includes(ops[0].value)
+        !['read-only', 'workspace-write', 'danger-full-access'].includes(
+          ops[0].value,
+        )
       )
         throw Error('Invalid permission edit')
       permissionDefault = ops[0].value
@@ -244,6 +318,130 @@ export async function makeBackend(
       await saveRuntime()
       events.emit('change')
       return { ok: true, value: {} }
+    },
+  })
+  const permissionOptions = [
+    { id: 'read-only', name: 'Read only' },
+    { id: 'workspace-write', name: 'Workspace write' },
+    { id: 'danger-full-access', name: 'Full access' },
+  ]
+  const presetSpec = (preset) =>
+    preset === 'read-only'
+      ? { sandbox: 'read-only', approval: 'ask' }
+      : preset === 'workspace-write'
+        ? { sandbox: 'workspace-write', approval: 'ask' }
+        : preset === 'danger-full-access'
+          ? { sandbox: 'danger-full-access', approval: 'never' }
+          : null
+  const permissionEnvironment = () => {
+    const spec = presetSpec(permissionDefault),
+      option = permissionOptions.find((o) => o.id === permissionDefault),
+      fullAccessBlocked = spec?.sandbox === 'danger-full-access'
+    const reason = !permissionAvailable
+      ? 'permission-unavailable'
+      : !spec || !option
+        ? 'permission-preset-unavailable'
+        : fullAccessBlocked
+          ? 'permission-full-access'
+          : ''
+    return {
+      available:
+        permissionAvailable && !!spec && !!option && !fullAccessBlocked,
+      reason,
+      preset: permissionDefault,
+      presetName: option?.name ?? permissionDefault,
+      revision: permissionRevision,
+      writable: permissionWritable,
+      fullAccessBlocked,
+      options: permissionOptions,
+      spec,
+    }
+  }
+  const permissionFacts = () => {
+    const ids = new Set([...sessions.keys(), ...archivedSessionIds])
+    for (const workspace of workspaces)
+      for (const id of workspace.sessionIds) ids.add(id)
+    return [...ids].map((id) => {
+      const session = sessions.get(id),
+        workspace =
+          workspaces.find((w) => w.sessionIds.includes(id)) ??
+          (session?.workspaceId
+            ? workspaces.find((w) => w.id === session.workspaceId)
+            : undefined),
+        preset = session?.projectionValues?.permissions?.currentValue,
+        spec = presetSpec(preset)
+      return {
+        sessionId: id,
+        workspaceId: workspace?.id ?? null,
+        workspaceTitle: workspace?.title ?? null,
+        title: session?.displayTitle ?? id,
+        live: !!session,
+        archived: archivedSessionIds.includes(id),
+        child: !!session?.parentSessionId || session?.origin === 'subagent',
+        running: running.has(id) || !!session?.running,
+        pendingKind: session?.pendingInteraction
+          ? permissionPendingReason(session.pendingInteraction.kind)
+          : null,
+        effective: session
+          ? {
+              preset: preset ?? 'unknown',
+              sandbox: spec?.sandbox ?? 'unknown',
+              approval: spec?.approval ?? 'ask',
+            }
+          : null,
+      }
+    })
+  }
+  const permissionPreview = async (body) =>
+    permissionApplyPreview(
+      permissionEnvironment(),
+      permissionFacts(),
+      body ?? {},
+    )
+  const permissionApplyRequest = async (body) => {
+    const result = permissionApply(
+      permissionEnvironment(),
+      permissionFacts(),
+      body ?? {},
+      {
+        read(sessionId) {
+          const session = sessions.get(sessionId)
+          if (!session) throw Error('Session is no longer live')
+          if (sessionId === permissionMismatchSessionId)
+            return { preset: 'custom', sandbox: 'unknown', approval: 'ask' }
+          const preset = session.projectionValues.permissions.currentValue,
+            spec = presetSpec(preset)
+          return {
+            preset: preset ?? 'unknown',
+            sandbox: spec?.sandbox ?? 'unknown',
+            approval: spec?.approval ?? 'ask',
+          }
+        },
+        write(sessionId, preset) {
+          permissionAttempts.set(
+            sessionId,
+            (permissionAttempts.get(sessionId) ?? 0) + 1,
+          )
+          if (sessionId === permissionFailSessionId)
+            throw Error('Lab fault: permission write failed')
+          const session = sessions.get(sessionId)
+          if (!session) throw Error('Session is no longer live')
+          if (sessionId === permissionMismatchSessionId) return
+          session.projectionValues.permissions.currentValue = preset
+        },
+      },
+    )
+    permissionLastResult = result
+    await saveRuntime()
+    events.emit('change')
+    return result
+  }
+  const permissionApplyState = () => ({
+    attempts: Object.fromEntries(permissionAttempts),
+    lastResult: permissionLastResult,
+    faults: {
+      failSessionId: permissionFailSessionId,
+      mismatchSessionId: permissionMismatchSessionId,
     },
   })
   const runtime = {
@@ -325,13 +523,20 @@ export async function makeBackend(
                 route: script.route ?? 'express',
                 questions:
                   script.route === 'needs-info'
-                    ? [
-                        text(
-                          'Which output is required?',
-                          '需要哪种输出结果？',
-                        ),
-                      ]
+                    ? [text('Which output is required?', '需要哪种输出结果？')]
                     : [],
+                coordination: {
+                  dependencies: t.dependencies ?? [],
+                  resourceKeys: t.resourceKeys ?? [],
+                  dependencyOrder: [...(t.dependencies ?? []), t.id],
+                  resourceConflicts: [],
+                  isolation:
+                    (t.dependencies ?? []).length ||
+                    (t.resourceKeys ?? []).length
+                      ? 'workspace'
+                      : 'none',
+                  mergeRisk: script.risk ?? 'low',
+                },
               },
             })
           } else if (phase === 'review') {
@@ -347,10 +552,11 @@ export async function makeBackend(
                   .map((_c, criterion) => ({
                     criterion,
                     passed: !script.failedReview,
-                    evidence: text(
-                      'Lab independent reviewer inspected criterion ',
-                      'Lab 独立复核者检查了验收项 ',
-                    ) + criterion,
+                    evidence:
+                      text(
+                        'Lab independent reviewer inspected criterion ',
+                        'Lab 独立复核者检查了验收项 ',
+                      ) + criterion,
                   }))
                   .slice(
                     0,
@@ -359,12 +565,7 @@ export async function makeBackend(
                       : t.criteria.length,
                   ),
                 remainingRisks: script.remainingRisk
-                  ? [
-                      text(
-                        'Unverified external effect',
-                        '存在未验证的外部影响',
-                      ),
-                    ]
+                  ? [text('Unverified external effect', '存在未验证的外部影响')]
                   : [],
                 evidence: text(
                   'Scripted independent review; native lane separately verifies the actual Agent/tool path.',
@@ -373,10 +574,7 @@ export async function makeBackend(
               },
             })
           } else {
-            if (
-              script.missingReport ||
-              (script.missingReportOnce && !reminder)
-            )
+            if (script.missingReport || (script.missingReportOnce && !reminder))
               return
             for (const check of t.completionPolicy.checks) {
               if (
@@ -469,7 +667,10 @@ export async function makeBackend(
     create: async (request) => {
       const { inputImages: drafts, ...rest } = request
       const images = saveInputImages(drafts)
-      return board.create({ ...rest, ...(images.length ? { inputImages: images } : {}) })
+      return board.create({
+        ...rest,
+        ...(images.length ? { inputImages: images } : {}),
+      })
     },
     image: async ({ id, path: relative }) => {
       const t = task(id)
@@ -493,7 +694,9 @@ export async function makeBackend(
         [t?.sessionId, t?.analysisSessionId, t?.reviewSessionId].some(
           (id) => id && runtime.running(id),
         ) ||
-        dispatcher.snapshot().activeTaskId === request.id ||
+        dispatcher
+          .snapshot()
+          .active.some((slot) => slot.taskId === request.id) ||
         completion.active(request.id)
       )
         throw Error('busy: Stop the linked native Agent first')
@@ -506,12 +709,17 @@ export async function makeBackend(
     },
     dispatch: async (request) =>
       dispatcher.configure(request.workspaceId, request.enabled, request),
+    setAutomationLanes: async (request) => board.setLanes(request),
     analyze: async (request) => {
       const old = task(request.id)
       if (
         [old?.sessionId, old?.analysisSessionId, old?.reviewSessionId].some(
           (id) => id && runtime.running(id),
-        )
+        ) ||
+        dispatcher
+          .snapshot()
+          .active.some((slot) => slot.taskId === request.id) ||
+        completion.active(request.id)
       )
         throw Error('busy: stop the linked Agent first')
       const prepared = await board.update({
@@ -593,6 +801,10 @@ export async function makeBackend(
     task,
     scripts,
     permissions,
+    permissionPreview,
+    permissionApply: permissionApplyRequest,
+    permissionApplyState,
+    archivedSessionIds,
     async setInteraction(id, kind) {
       const session = sessions.get(id)
       if (!session) throw Error('Session missing')
@@ -602,14 +814,31 @@ export async function makeBackend(
       await saveRuntime()
       events.emit('change')
     },
-    async permissionControl({ available, writable, preset }) {
+    async permissionControl({
+      available,
+      writable,
+      preset,
+      sessionId,
+      sessionPreset,
+      failSessionId,
+      mismatchSessionId,
+    }) {
       if (available !== undefined) permissionAvailable = available
       if (writable !== undefined) permissionWritable = writable
       if (preset) {
         permissionDefault = preset
         permissionRevision++
       }
+      if (sessionId && sessionPreset) {
+        const session = sessions.get(sessionId)
+        if (!session) throw Error('Session missing')
+        session.projectionValues.permissions.currentValue = sessionPreset
+      }
+      if (failSessionId !== undefined) permissionFailSessionId = failSessionId
+      if (mismatchSessionId !== undefined)
+        permissionMismatchSessionId = mismatchSessionId
       await saveRuntime()
+      events.emit('change')
     },
     release: (id) => {
       gates.get(id)?.()
@@ -623,6 +852,8 @@ export async function makeBackend(
         sessionIds: w.sessionIds,
       })),
       sessions: [...sessions.values()],
+      archivedSessionIds: [...archivedSessionIds],
+      permissionApply: permissionApplyState(),
     }),
     async idle() {
       for (;;) {
@@ -637,6 +868,7 @@ export async function makeBackend(
           const state = dispatcher.snapshot()
           if (
             !state.activeTaskId &&
+            !completion.busy() &&
             (!state.enabled ||
               (state.watch &&
                 !board.analysisEligible(state.workspaceId).length &&

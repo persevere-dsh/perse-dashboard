@@ -62,7 +62,9 @@ const readTrace = async () =>
 const inputFixture = async (name) => ({
   name,
   base64: (
-    await fs.readFile(new URL(`./fixtures/input-images/${name}`, import.meta.url))
+    await fs.readFile(
+      new URL(`./fixtures/input-images/${name}`, import.meta.url),
+    )
   ).toString('base64'),
 })
 async function pasteImage(textarea, name, type) {
@@ -140,7 +142,11 @@ function contrastRatio(foreground, background) {
           ? channel / 12.92
           : ((channel + 0.055) / 1.055) ** 2.4,
       )
-      .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0)
+      .reduce(
+        (sum, channel, index) =>
+          sum + channel * [0.2126, 0.7152, 0.0722][index],
+        0,
+      )
   const [a, b] = [luminance(foreground), luminance(background)].sort(
     (x, y) => y - x,
   )
@@ -224,9 +230,7 @@ async function expectFocusRing(target, blue, label) {
 }
 // Assumes the task detail dialog is already open; leaves it open on Overview.
 async function expectOpenDetailAccent(target, blue, screenshot) {
-  const selected = target.locator(
-    '.pd-detail-tabs button[aria-selected=true]',
-  )
+  const selected = target.locator('.pd-detail-tabs button[aria-selected=true]')
   await expect(selected).toBeVisible()
   expect(await computed(selected, 'borderBottomColor')).toBe(blue)
   await target.locator('.pd-detail-tabs button').last().click()
@@ -236,8 +240,7 @@ async function expectOpenDetailAccent(target, blue, screenshot) {
   const audit = target.locator('.pd-audit').first()
   await expect(audit).toBeVisible()
   expect(await computed(audit, 'backgroundColor', '::before')).toBe(blue)
-  if (screenshot)
-    await target.screenshot({ path: path.join(run, screenshot) })
+  if (screenshot) await target.screenshot({ path: path.join(run, screenshot) })
   // Restore the Overview tab so later task acceptance still sees its checklist.
   await target.locator('.pd-detail-tabs button').first().click()
 }
@@ -365,14 +368,12 @@ try {
   expect(task.priority).toBe(2)
   expect(task.assignee).toBe(null)
   expect(task.language).toBe('zh')
-  check('task creation is durable, persists the active zh language and never executes a model')
+  check(
+    'task creation is durable, persists the active zh language and never executes a model',
+  )
   await expectBusinessBlue(page, LIGHT_BLUE, 'light')
   // Creation opens the detail dialog, so inspect its accent before dismissing it.
-  await expectOpenDetailAccent(
-    page,
-    LIGHT_BLUE,
-    'theme-detail-light.png',
-  )
+  await expectOpenDetailAccent(page, LIGHT_BLUE, 'theme-detail-light.png')
   check('selected tab underline and audit node use DSH business-blue (light)')
 
   await page.getByRole('button', { name: '准备 DSH 草稿', exact: true }).click()
@@ -636,6 +637,14 @@ try {
   )
   await page.locator('.pd-card').filter({ hasText: autoTitle }).click()
   await expect(page.locator('.pd-detail')).toContainText('自动完成')
+  if (runtime.lane === 'native') {
+    await page
+      .getByRole('tab', { name: '分析与复核', exact: true })
+      .click()
+    await expect(page.locator('.pd-detail')).toContainText('协同建议')
+    await expect(page.locator('.pd-detail')).toContainText('隔离方式')
+    expect(completed.analysis.coordination?.mergeRisk).toBe('low')
+  }
   await page
     .locator('.pd-detail')
     .screenshot({ path: path.join(run, 'automatic-evidence.png') })
@@ -744,11 +753,207 @@ try {
     check(
       'real DSH reasoning-only stops receive one report reminder; task failure is isolated; later issue auto-completes and owner recovery works',
     )
-    await page.getByRole('button', { name: '权限设置', exact: true }).click()
-    const permissionDialog = page.getByRole('dialog', {
-      name: 'DSH 默认执行权限',
+    // Bounded multi-lane execution, owner dependencies and resource keys through
+    // the real Host, dispatcher, SessionController and deterministic/live model.
+    await closeDetail()
+    await page.getByRole('button', { name: '任务看板', exact: true }).click()
+    await page
+      .getByRole('combobox', { name: '全部工作区', exact: true })
+      .selectOption(ws)
+    const lanes = page.getByLabel('执行路数', { exact: true })
+    await lanes.fill('2')
+    const saveLanes = page.getByRole('button', {
+      name: '保存路数',
       exact: true,
     })
+    if (await saveLanes.isEnabled()) await saveLanes.click()
+    await until(
+      async () => (await snapshot()).settings.workspaces[ws]?.lanes ?? 2,
+      2,
+    )
+    const laneTask = (title, description, extra = {}) =>
+      rpc('perseDashboard/create', {
+        request: {
+          requestId: crypto.randomUUID(),
+          workspaceId: ws,
+          title,
+          description,
+          criteria: ['Native lane task reports concrete evidence'],
+          priority: 1,
+          assignee: null,
+          intake: false,
+          completionPolicy: {
+            mode: 'manual',
+            instructions: '',
+            checks: [],
+          },
+          ...extra,
+        },
+      })
+    const root = await laneTask(
+      'Lane dependency root',
+      'PERSE_LANE_SLOW In this disposable workspace, write lane-root.txt, read it back and submit dashboard_report with concrete evidence. Do not modify other files.',
+    )
+    const dependent = await laneTask(
+      'Lane dependent task',
+      'PERSE_LANE_SLOW In this disposable workspace, write lane-dependent.txt, read it back and submit dashboard_report with concrete evidence. Do not modify other files.',
+      {
+        dependencies: [root.id],
+        resourceKeys: ['branch:native-lane'],
+      },
+    )
+    const parallel = await laneTask(
+      'Lane parallel task',
+      'PERSE_LANE_SLOW In this disposable workspace, write lane-parallel.txt, read it back and submit dashboard_report with concrete evidence. Do not modify other files.',
+    )
+    await page
+      .locator('.pd-card')
+      .filter({ hasText: 'Lane dependent task' })
+      .getByText('等待依赖', { exact: false })
+      .waitFor()
+    await page
+      .locator('.pd-card')
+      .filter({ hasText: 'Lane dependent task' })
+      .click()
+    const laneDependencySection = page
+      .locator('.pd-section')
+      .filter({ hasText: '依赖任务' })
+    await expect(laneDependencySection).toContainText('Lane dependency root')
+    await expect(laneDependencySection).toContainText('待处理')
+    await expect(laneDependencySection).toContainText(root.id)
+    await closeDetail()
+    const waitMs = runtime.lane === 'live' ? 120000 : 30000
+    await page
+      .getByRole('button', { name: '持续分析与处理', exact: true })
+      .click()
+    await until(async () => {
+      const state = await snapshot()
+      const active = state.dispatch.active
+        .filter((slot) => slot.phase === 'execution')
+        .map((slot) => slot.taskId)
+      return (
+        active.length === 2 &&
+        active.includes(root.id) &&
+        active.includes(parallel.id) &&
+        state.dispatch.lanes === 2
+      )
+    }, true, waitMs)
+    expect(
+      (await snapshot()).tasks.find((task) => task.id === dependent.id).status,
+    ).toBe('todo')
+    await until(
+      async () =>
+        (await snapshot()).tasks.find((task) => task.id === root.id)?.status,
+      'in-review',
+      waitMs,
+    )
+    await until(
+      async () =>
+        (await snapshot()).tasks.find((task) => task.id === parallel.id)?.status,
+      'in-review',
+      waitMs,
+    )
+    const acceptedRoot = (await snapshot()).tasks.find(
+      (task) => task.id === root.id,
+    )
+    const checkedRoot = await rpc('perseDashboard/update', {
+      request: {
+        requestId: crypto.randomUUID(),
+        id: root.id,
+        expectedVersion: acceptedRoot.version,
+        action: 'edit',
+        checked: [true],
+      },
+    })
+    await rpc('perseDashboard/update', {
+      request: {
+        requestId: crypto.randomUUID(),
+        id: root.id,
+        expectedVersion: checkedRoot.version,
+        action: 'accept',
+      },
+    })
+    await until(
+      async () =>
+        (await snapshot()).tasks.find((task) => task.id === dependent.id)
+          ?.status,
+      'in-progress',
+      waitMs,
+    )
+    const waiter = await laneTask(
+      'Lane resource waiter',
+      'PERSE_LANE_SLOW In this disposable workspace, write lane-waiter.txt, read it back and submit dashboard_report with concrete evidence. Do not modify other files.',
+      { resourceKeys: ['branch:native-lane'] },
+    )
+    await expect(
+      page
+        .locator('.pd-card')
+        .filter({ hasText: 'Lane resource waiter' })
+        .getByText('占用中', { exact: false }),
+    ).toBeVisible()
+    await page
+      .locator('.pd-card')
+      .filter({ hasText: 'Lane resource waiter' })
+      .click()
+    const laneResourceSection = page
+      .locator('.pd-section')
+      .filter({ hasText: '资源键' })
+    await expect(laneResourceSection).toContainText('branch:native-lane')
+    await expect(laneResourceSection).toContainText('Lane dependent task')
+    await closeDetail()
+    expect(
+      (await snapshot()).dispatch.active.some(
+        (slot) => slot.taskId === waiter.id,
+      ),
+    ).toBe(false)
+    await until(
+      async () =>
+        (await snapshot()).tasks.find((task) => task.id === dependent.id)
+          ?.status,
+      'in-review',
+      waitMs,
+    )
+    await until(
+      async () =>
+        (await snapshot()).dispatch.active.some(
+          (slot) => slot.taskId === waiter.id,
+        ),
+      true,
+      waitMs,
+    )
+    await until(
+      async () =>
+        (await snapshot()).tasks.find((task) => task.id === waiter.id)?.status,
+      'in-review',
+      waitMs,
+    )
+    await page
+      .getByRole('button', { name: '暂停后续议题', exact: true })
+      .click()
+    await until(async () => (await snapshot()).dispatch.enabled, false)
+    check(
+      'bounded lanes run two independent tasks, owner dependencies gate claim, and a shared resource key serializes the waiter without preemption',
+    )
+    await page.getByRole('button', { name: '权限设置', exact: true }).click()
+    const permissionDialog = page.getByRole('dialog', {
+        name: 'DSH 默认执行权限',
+        exact: true,
+      }),
+      permissionConfirm = page.getByRole('alertdialog', {
+        name: '修改 DSH 默认执行权限？',
+        exact: true,
+      }),
+      applyDialog = page.getByRole('dialog', {
+        name: '将默认权限应用到已有会话？',
+        exact: true,
+      }),
+      applyFooter = applyDialog.locator('.pd-dialog-footer'),
+      projectionOf = async (sessionId) =>
+        (
+          await rpc('session/projections', {
+            request: { sessionId },
+          })
+        )?.values?.permissions?.currentValue
     await expect(
       permissionDialog.getByRole('radio', {
         name: '工作区内修改',
@@ -760,11 +965,96 @@ try {
     )
     const catalog = await rpc('permissionPresets/catalog')
     expect(catalog.defaultPreset).toBe('workspace-write')
+    // Save Full access, create one existing Session at that preset, then save
+    // the lower default back. The existing Session must stay unchanged.
+    await permissionDialog
+      .getByRole('radio', { name: '完全访问', exact: true })
+      .check()
+    await permissionDialog
+      .getByRole('button', { name: '保存默认权限', exact: true })
+      .click()
+    await permissionConfirm.getByRole('checkbox').check()
+    await permissionConfirm
+      .getByRole('button', { name: '确认并保存默认权限', exact: true })
+      .click()
+    await expect(permissionDialog).toContainText('已保存并回读确认')
+    expect((await rpc('permissionPresets/catalog')).defaultPreset).toBe(
+      'danger-full-access',
+    )
     await page
       .getByRole('button', { name: '关闭权限设置', exact: true })
       .click()
+    const existingSession = await rpc('session/create', {
+      request: { workspaceId: ws, sessionId: `session-${crypto.randomUUID()}` },
+    })
+    await expect
+      .poll(() => projectionOf(existingSession.sessionId))
+      .toBe('danger-full-access')
+    await page.getByRole('button', { name: '权限设置', exact: true }).click()
+    await expect(
+      permissionDialog.getByRole('radio', {
+        name: '完全访问',
+        exact: true,
+      }),
+    ).toBeChecked()
+    await permissionDialog
+      .getByRole('radio', { name: '工作区内修改', exact: true })
+      .check()
+    await permissionDialog
+      .getByRole('button', { name: '保存默认权限', exact: true })
+      .click()
+    await permissionConfirm.getByRole('checkbox').check()
+    await permissionConfirm
+      .getByRole('button', { name: '确认并保存默认权限', exact: true })
+      .click()
+    await expect(permissionDialog).toContainText('已保存并回读确认')
+    await page
+      .getByRole('button', { name: '关闭权限设置', exact: true })
+      .click()
+    await expect
+      .poll(() => projectionOf(existingSession.sessionId))
+      .toBe('danger-full-access')
+    // Preview and cancel never write; only the explicit acknowledgement applies.
+    await page
+      .getByRole('button', { name: '应用到已有会话', exact: true })
+      .click()
+    await expect(applyDialog).toBeVisible()
+    await expect(
+      applyDialog.getByRole('region', { name: '目标会话', exact: true }),
+    ).toContainText(existingSession.sessionId)
+    await expect(applyDialog).toContainText('工作区内修改')
+    await expect(
+      applyFooter.getByRole('button', {
+        name: '确认并应用',
+        exact: true,
+      }),
+    ).toBeDisabled()
+    await applyFooter.getByRole('button', { name: '取消', exact: true }).click()
+    await expect
+      .poll(() => projectionOf(existingSession.sessionId))
+      .toBe('danger-full-access')
+    await page
+      .getByRole('button', { name: '应用到已有会话', exact: true })
+      .click()
+    await applyDialog.getByRole('checkbox').check()
+    await applyFooter
+      .getByRole('button', { name: '确认并应用', exact: true })
+      .click()
+    await expect(
+      applyDialog.getByRole('region', { name: '应用结果', exact: true }),
+    ).toContainText('已应用')
+    await expect
+      .poll(() => projectionOf(existingSession.sessionId))
+      .toBe('workspace-write')
+    await applyDialog
+      .getByRole('region', { name: '应用结果', exact: true })
+      .scrollIntoViewIfNeeded()
+    await page.screenshot({
+      path: path.join(run, 'native-permission-apply.png'),
+    })
+    await applyFooter.getByRole('button', { name: '完成', exact: true }).click()
     check(
-      'permission default is read from the real DSH catalog and Settings; reads do not change it',
+      'real DSH default save never changes existing Sessions; one-shot apply is separately confirmed, writes only the official permission API, and reads the effective preset back',
     )
     await page.getByRole('button', { name: '新建任务', exact: true }).click()
     const probe = page.locator('form.pd-create'),
@@ -827,6 +1117,24 @@ try {
       path: path.join(run, 'pending-approval-board.png'),
       fullPage: true,
     })
+    // The pending approval Session is listed as excluded and is never answered
+    // by the permission apply action.
+    expect(beforeApproval.sessionId).toBeTruthy()
+    await page
+      .getByRole('button', { name: '应用到已有会话', exact: true })
+      .click()
+    await expect(applyDialog).toBeVisible()
+    await expect(
+      applyDialog.getByRole('region', { name: '已排除', exact: true }),
+    ).toContainText(beforeApproval.sessionId)
+    await expect(
+      applyDialog.getByRole('region', { name: '已排除', exact: true }),
+    ).toContainText('等待审批')
+    await applyFooter.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(applyDialog).toBeHidden()
+    check(
+      'permission apply preview excludes the running Session with a pending approval and does not answer it',
+    )
     await page.locator('.pd-card').filter({ hasText: probeTitle }).click()
     await page
       .getByRole('button', { name: '在 DSH 中查看请求 ↗', exact: true })
@@ -865,7 +1173,9 @@ try {
       criteriaControl = imageForm.locator(
         '.pd-input-images[data-source=criteria]',
       )
-    await imageForm.getByLabel('标题', { exact: true }).fill('Image input journey')
+    await imageForm
+      .getByLabel('标题', { exact: true })
+      .fill('Image input journey')
     await descriptionField.fill(
       'Native image input journey. PERSE_MISSING_ONCE Exercise the pasted images through analysis, execution and review.',
     )
@@ -880,7 +1190,12 @@ try {
     await expect(descriptionControl).toContainText('87 B')
     await expect(criteriaControl).toContainText('验收标准')
     await expect(criteriaControl).toContainText('650 B')
-    await expect(descriptionControl.getByRole('button', { name: '移除图片: fixture-description.png', exact: true })).toHaveCount(1)
+    await expect(
+      descriptionControl.getByRole('button', {
+        name: '移除图片: fixture-description.png',
+        exact: true,
+      }),
+    ).toHaveCount(1)
     await pasteImage(descriptionField, ...IMAGE_FIXTURES.webp)
     await pasteImage(criteriaField, ...IMAGE_FIXTURES.gif)
     await expectImageCards(descriptionControl, 2)
@@ -898,7 +1213,10 @@ try {
       path: path.join(run, 'input-images-form.png'),
     })
     await criteriaControl
-      .getByRole('button', { name: '移除图片: fixture-fourth.gif', exact: true })
+      .getByRole('button', {
+        name: '移除图片: fixture-fourth.gif',
+        exact: true,
+      })
       .click()
     await expectImageCards(criteriaControl, 1)
     await expect(page.locator('form.pd-create .pd-input-image')).toHaveCount(3)
@@ -914,26 +1232,38 @@ try {
     check(
       'create form accepts pasted and attached PNG/JPEG/WebP/GIF with source labels, byte sizes, thumbnails and remove controls',
     )
-    await pasteImage(descriptionField, 'fixture-description.png', 'image/svg+xml')
+    await pasteImage(
+      descriptionField,
+      'fixture-description.png',
+      'image/svg+xml',
+    )
     await expect(descriptionControl.getByRole('alert')).toContainText(
       '不支持的图片格式',
     )
-    await descriptionField.evaluate((element, max) => {
-      const transfer = new DataTransfer()
-      transfer.items.add(
-        new File([new Uint8Array(max + 1)], 'huge.png', { type: 'image/png' }),
-      )
-      element.dispatchEvent(
-        new ClipboardEvent('paste', {
-          bubbles: true,
-          cancelable: true,
-          clipboardData: transfer,
-        }),
-      )
-    }, (await snapshot()).imageLimits.maxImageBytes)
+    await descriptionField.evaluate(
+      (element, max) => {
+        const transfer = new DataTransfer()
+        transfer.items.add(
+          new File([new Uint8Array(max + 1)], 'huge.png', {
+            type: 'image/png',
+          }),
+        )
+        element.dispatchEvent(
+          new ClipboardEvent('paste', {
+            bubbles: true,
+            cancelable: true,
+            clipboardData: transfer,
+          }),
+        )
+      },
+      (await snapshot()).imageLimits.maxImageBytes,
+    )
     await expect(descriptionControl.getByRole('alert')).toContainText('上限')
     await criteriaControl
-      .getByRole('button', { name: '移除图片: fixture-fourth.gif', exact: true })
+      .getByRole('button', {
+        name: '移除图片: fixture-fourth.gif',
+        exact: true,
+      })
       .click()
     await expectImageCards(criteriaControl, 1)
     await descriptionField.evaluate((element) => {
@@ -963,7 +1293,9 @@ try {
     })
     await expectImageCards(criteriaControl, 2)
     await pasteImage(descriptionField, ...IMAGE_FIXTURES.png)
-    await expect(descriptionControl.getByRole('alert')).toContainText('最多 4 张')
+    await expect(descriptionControl.getByRole('alert')).toContainText(
+      '最多 4 张',
+    )
     await expect(page.locator('form.pd-create .pd-input-image')).toHaveCount(4)
     check(
       'unsupported, oversized, corrupt and over-count pastes fail visibly before submit and add no image',
@@ -971,11 +1303,16 @@ try {
     // GIF admission and preview are proven above. DSH normalizes GIF bytes, so
     // the hash-equality journey keeps the byte-stable PNG/JPEG/WebP fixtures.
     await criteriaControl
-      .getByRole('button', { name: '移除图片: fixture-fourth.gif', exact: true })
+      .getByRole('button', {
+        name: '移除图片: fixture-fourth.gif',
+        exact: true,
+      })
       .click()
     await expectImageCards(criteriaControl, 1)
     await expect(page.locator('form.pd-create .pd-input-image')).toHaveCount(3)
-    await imageForm.getByRole('button', { name: '创建任务', exact: true }).click()
+    await imageForm
+      .getByRole('button', { name: '创建任务', exact: true })
+      .click()
     await expect(
       page.getByRole('dialog', { name: 'Image input journey', exact: true }),
     ).toBeVisible()
@@ -1012,9 +1349,7 @@ try {
     check(
       'created task persists image metadata only and restores Remote-loaded previews',
     )
-    await page
-      .getByRole('tab', { name: '属性与规则', exact: true })
-      .click()
+    await page.getByRole('tab', { name: '属性与规则', exact: true }).click()
     await page.getByText('编辑任务', { exact: true }).click()
     const editor = page.locator('.pd-detail details').filter({
       hasText: '编辑任务',
@@ -1022,9 +1357,7 @@ try {
     const editorDescription = editor.locator(
         '.pd-input-images[data-source=description]',
       ),
-      editorCriteria = editor.locator(
-        '.pd-input-images[data-source=criteria]',
-      )
+      editorCriteria = editor.locator('.pd-input-images[data-source=criteria]')
     await expectImageCards(editorDescription, 2)
     // The editor's acceptance-criteria field accepts pasted images too.
     await editor.getByRole('button', { name: '添加标准', exact: true }).click()
@@ -1034,7 +1367,10 @@ try {
     )
     await expectImageCards(editorCriteria, 2)
     await editorCriteria
-      .getByRole('button', { name: '移除图片: fixture-criteria.jpg', exact: true })
+      .getByRole('button', {
+        name: '移除图片: fixture-criteria.jpg',
+        exact: true,
+      })
       .last()
       .click()
     await expectImageCards(editorCriteria, 1)
@@ -1043,7 +1379,10 @@ try {
       .click()
     check('edit form accepts pasted images in the acceptance-criteria field')
     await editorDescription
-      .getByRole('button', { name: '移除图片: fixture-extra.webp', exact: true })
+      .getByRole('button', {
+        name: '移除图片: fixture-extra.webp',
+        exact: true,
+      })
       .click()
     await pasteImage(
       editor.locator('.pd-field textarea').first(),
@@ -1056,7 +1395,11 @@ try {
         (await snapshot()).tasks
           .find((t) => t.id === imageTask.id)
           ?.inputImages.map((image) => image.name),
-      ['fixture-description.png', 'fixture-criteria.jpg', 'fixture-description.png'],
+      [
+        'fixture-description.png',
+        'fixture-criteria.jpg',
+        'fixture-description.png',
+      ],
     )
     const editedTask = (await snapshot()).tasks.find(
       (t) => t.id === imageTask.id,
@@ -1075,7 +1418,9 @@ try {
       .locator('.pd-card')
       .filter({ hasText: 'Image input journey' })
       .click()
-    await expect(page.locator('.pd-input-image-gallery .pd-input-image')).toHaveCount(3)
+    await expect(
+      page.locator('.pd-input-image-gallery .pd-input-image'),
+    ).toHaveCount(3)
     await expect
       .poll(() =>
         page
@@ -1083,14 +1428,17 @@ try {
           .evaluateAll((images) => images.map((img) => img.naturalWidth)),
       )
       .toEqual([12, 12, 12])
-    check('reload restores persisted input-image previews through the owner Remote')
+    check(
+      'reload restores persisted input-image previews through the owner Remote',
+    )
     await closeDetail()
     await page
       .getByRole('combobox', { name: '全部工作区', exact: true })
       .selectOption(ws)
     await page.getByRole('button', { name: '启动队列', exact: true }).click()
     await until(
-      async () => (await snapshot()).tasks.find((t) => t.id === imageTask.id)?.status,
+      async () =>
+        (await snapshot()).tasks.find((t) => t.id === imageTask.id)?.status,
       'done',
       120000,
     )
@@ -1106,27 +1454,31 @@ try {
     check(
       'image task completes analysis → execution → independent review with automatic completion',
     )
-    const trace = (await fs.readFile(
-      path.join(runtime.home, 'sim-model-trace.jsonl'),
-      'utf8',
-    ))
+    const trace = (
+      await fs.readFile(
+        path.join(runtime.home, 'sim-model-trace.jsonl'),
+        'utf8',
+      )
+    )
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line))
       .filter((entry) => entry.taskId === imageTask.id)
     const expectedHashes = await Promise.all(
-      ['fixture-description.png', 'fixture-criteria.jpg', 'fixture-description.png'].map(
-        async (name) => {
-          const { createHash } = await import('node:crypto')
-          return createHash('sha256')
-            .update(
-              await fs.readFile(
-                new URL(`./fixtures/input-images/${name}`, import.meta.url),
-              ),
-            )
-            .digest('hex')
-        },
-      ),
+      [
+        'fixture-description.png',
+        'fixture-criteria.jpg',
+        'fixture-description.png',
+      ].map(async (name) => {
+        const { createHash } = await import('node:crypto')
+        return createHash('sha256')
+          .update(
+            await fs.readFile(
+              new URL(`./fixtures/input-images/${name}`, import.meta.url),
+            ),
+          )
+          .digest('hex')
+      }),
     )
     for (const phase of ['analysis', 'execution', 'review']) {
       const request = trace.find(
@@ -1137,7 +1489,9 @@ try {
       expect(hasHan(request.user)).toBe(true)
       expect(request.user).toContain(`PERSE_PHASE=${phase}`)
       expect(request.imageBlocks).toBe(3)
-      expect(request.images.map((image) => image.sha256)).toEqual(expectedHashes)
+      expect(request.images.map((image) => image.sha256)).toEqual(
+        expectedHashes,
+      )
       expect(request.labels).toHaveLength(3)
       expect(
         request.labels.map((label, index) => {
@@ -1203,7 +1557,8 @@ try {
     })
     await page.getByRole('button', { name: '启动队列', exact: true }).click()
     await until(
-      async () => (await snapshot()).tasks.find((t) => t.id === textOnly.id)?.status,
+      async () =>
+        (await snapshot()).tasks.find((t) => t.id === textOnly.id)?.status,
       'blocked',
       30000,
     )
@@ -1246,21 +1601,20 @@ try {
     await liveDescription.fill(
       'The pasted input image is a solid colored square. Look at the actual image and determine whether it is red, green or blue. In this disposable workspace, write live-image.txt containing exactly the matching uppercase color name (RED, GREEN or BLUE) and no newline. Read it back and report evidence through dashboard_report. Do not access any other directory.',
     )
-    await liveForm
-      .getByLabel('执行前自动分析议题', { exact: true })
-      .uncheck()
+    await liveForm.getByLabel('执行前自动分析议题', { exact: true }).uncheck()
     await liveForm
       .getByRole('radiogroup', { name: '完成策略', exact: true })
       .getByRole('radio', { name: '人工验收', exact: true })
       .check()
     await pasteImage(liveDescription, ...IMAGE_FIXTURES.png)
     await expectImageCards(liveControl, 1)
-    const liveCriterion =
-      'live-image.txt contains exactly RED with no newline'
+    const liveCriterion = 'live-image.txt contains exactly RED with no newline'
     await liveForm
       .getByLabel('验收标准（每行一条）', { exact: true })
       .fill(liveCriterion)
-    await liveForm.getByRole('button', { name: '创建任务', exact: true }).click()
+    await liveForm
+      .getByRole('button', { name: '创建任务', exact: true })
+      .click()
     await expect(
       page.getByRole('dialog', { name: 'Live image perception', exact: true }),
     ).toBeVisible()
@@ -1271,7 +1625,8 @@ try {
     await closeDetail()
     await page.getByRole('button', { name: '启动队列', exact: true }).click()
     await until(
-      async () => (await snapshot()).tasks.find((t) => t.id === liveTask.id)?.status,
+      async () =>
+        (await snapshot()).tasks.find((t) => t.id === liveTask.id)?.status,
       'in-review',
       180000,
     )
@@ -1288,7 +1643,8 @@ try {
     await page.getByLabel(liveCriterion, { exact: true }).click()
     await page.getByRole('button', { name: '确认验收并完成' }).click()
     await until(
-      async () => (await snapshot()).tasks.find((t) => t.id === liveTask.id)?.status,
+      async () =>
+        (await snapshot()).tasks.find((t) => t.id === liveTask.id)?.status,
       'done',
     )
     await page.screenshot({
@@ -1296,7 +1652,9 @@ try {
       fullPage: true,
     })
     await closeDetail()
-    check('live image task records explicit owner acceptance after real perception')
+    check(
+      'live image task records explicit owner acceptance after real perception',
+    )
   }
   await fs.writeFile(
     path.join(run, 'protocol-fixture.json'),
@@ -1378,12 +1736,7 @@ try {
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
   await expectBusinessBlue(page, DARK_BLUE, 'dark')
   await expectFocusRing(page, DARK_BLUE, 'dark')
-  await expectDetailAccent(
-    page,
-    DARK_BLUE,
-    title,
-    'theme-detail-dark.png',
-  )
+  await expectDetailAccent(page, DARK_BLUE, title, 'theme-detail-dark.png')
   await page.screenshot({ path: path.join(run, 'dark.png'), fullPage: true })
   expect(errors).toEqual([])
   check('no browser runtime errors')

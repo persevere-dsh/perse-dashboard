@@ -53,7 +53,9 @@ async function openTask(id) {
     .click()
 }
 const labImage = async (name) =>
-  (await readFile(new URL(`../fixtures/input-images/${name}`, import.meta.url))).toString('base64')
+  (
+    await readFile(new URL(`../fixtures/input-images/${name}`, import.meta.url))
+  ).toString('base64')
 async function pasteLabImage(locator, name, type) {
   await locator.evaluate(
     (element, image) => {
@@ -96,7 +98,14 @@ async function recover() {
 }
 async function create(
   title,
-  { mode = 'reviewed', manual = false, intake = true, checks = false } = {},
+  {
+    mode = 'reviewed',
+    manual = false,
+    intake = true,
+    checks = false,
+    dependencies = [],
+    resourceKeys = [],
+  } = {},
 ) {
   const modeLabels = {
     manual: 'Owner acceptance',
@@ -122,6 +131,22 @@ async function create(
   await f
     .getByLabel('Needs manual validation', { exact: true })
     .setChecked(manual)
+  for (const dependency of dependencies) {
+    const row = f
+      .locator('.pd-dependency-editor label')
+      .filter({ hasText: dependency })
+    await row.locator('input[type=checkbox]').check()
+  }
+  for (const key of resourceKeys) {
+    await f.locator('.pd-resource-editor input').fill(key)
+    await f
+      .locator('.pd-resource-editor')
+      .getByRole('button', { name: 'Add resource key', exact: true })
+      .click()
+    await expect(
+      f.locator('.pd-resource-editor .pd-badge').filter({ hasText: key }),
+    ).toBeVisible()
+  }
   const policy = f
     .getByRole('radiogroup', { name: 'Completion policy', exact: true })
     .getByRole('radio', { name: modeLabels[mode], exact: true })
@@ -144,6 +169,66 @@ async function create(
     page.locator('.pd-card').filter({ hasText: title }),
   ).toBeVisible()
   return (await data()).snapshot.tasks.find((t) => t.title === title)
+}
+async function setLanes(value) {
+  await closeDetail()
+  await page
+    .getByRole('combobox', { name: 'All workspaces', exact: true })
+    .selectOption('alpha')
+  await page.getByLabel('Execution lanes', { exact: true }).fill(String(value))
+  const save = page.getByRole('button', { name: 'Save lanes', exact: true })
+  if (await save.isEnabled()) await save.click()
+  await expect
+    .poll(
+      async () =>
+        (await data()).snapshot.settings.workspaces.alpha?.lanes ?? 2,
+    )
+    .toBe(value)
+}
+async function startWatch() {
+  await closeDetail()
+  await page
+    .getByRole('combobox', { name: 'All workspaces', exact: true })
+    .selectOption('alpha')
+  await page
+    .getByRole('button', { name: 'Watch and process issues', exact: true })
+    .click()
+}
+async function script(id, value) {
+  await api('/control', { action: 'script', id, script: value })
+}
+async function release(id) {
+  await api('/control', { action: 'release', id })
+}
+async function waitForSnapshot(predicate, label, timeout = 15000) {
+  await expect
+    .poll(async () => predicate((await data()).snapshot), {
+      timeout,
+      intervals: [100, 200, 400],
+    })
+    .toBe(true)
+  return label
+}
+async function acceptThroughApi(id) {
+  await waitForSnapshot(
+    (snapshot) => snapshot.tasks.find((t) => t.id === id)?.status === 'in-review',
+    'in-review before acceptance',
+  )
+  const current = await task(id)
+  await api('/command/update', {
+    requestId: crypto.randomUUID(),
+    id,
+    expectedVersion: current.version,
+    action: 'edit',
+    checked: current.criteria.map(() => true),
+  })
+  const checked = await task(id)
+  await api('/command/update', {
+    requestId: crypto.randomUUID(),
+    id,
+    expectedVersion: checked.version,
+    action: 'accept',
+  })
 }
 async function queue(id, status) {
   await outside('Start queue')
@@ -218,9 +303,7 @@ try {
       ).toBeVisible()
       await page.getByRole('button', { name: '新建任务', exact: true }).click()
       const chineseForm = page.locator('form.pd-create')
-      await chineseForm
-        .getByLabel('标题', { exact: true })
-        .fill('中文语言任务')
+      await chineseForm.getByLabel('标题', { exact: true }).fill('中文语言任务')
       await chineseForm
         .getByLabel('任务说明', { exact: true })
         .fill('验证中文界面与任务语言')
@@ -420,10 +503,31 @@ try {
       await expect(
         page.getByText('Automatically completed', { exact: false }),
       ).toBeVisible()
+      await page
+        .getByRole('tab', { name: 'Analysis & review', exact: true })
+        .click()
+      await expect(
+        page.getByText('Coordination suggestions', { exact: true }),
+      ).toBeVisible()
+      await expect(page.getByText('Isolation', { exact: true })).toBeVisible()
+      await expect(
+        page.getByText('Merge risk', { exact: true }),
+      ).toBeVisible()
       const verified = await create('File verified automation', {
         mode: 'verified',
+        intake: false,
         checks: true,
       })
+      await page
+        .getByRole('button', { name: 'Analyze this issue', exact: true })
+        .click()
+      await expect
+        .poll(async () => (await task(verified.id)).analysis?.route)
+        .toBe('express')
+      await expect
+        .poll(async () => (await task(verified.id)).status)
+        .toBe('todo')
+      expect((await task(verified.id)).analysis?.risk).toBe('low')
       await queue(verified.id, 'done')
       expect((await task(verified.id)).completion.kind).toBe('verified')
       await outside('Watch and process issues')
@@ -568,8 +672,18 @@ try {
         const file = !!script.wrongFile,
           t = await create('Held ' + JSON.stringify(script), {
             mode: file ? 'verified' : 'reviewed',
+            intake: file ? false : true,
             checks: file,
           })
+        if (file) {
+          await page
+            .getByRole('button', { name: 'Analyze this issue', exact: true })
+            .click()
+          await expect
+            .poll(async () => (await task(t.id)).analysis?.route)
+            .toBe('express')
+          await expect.poll(async () => (await task(t.id)).status).toBe('todo')
+        }
         await api('/control', { action: 'script', id: t.id, script })
         await queue(t.id, 'in-review')
         const held = await task(t.id)
@@ -752,6 +866,186 @@ try {
           exact: true,
         }),
       ).toContainText('Workspace write')
+      const applyButton = page.getByRole('button', {
+          name: 'Apply to existing Sessions',
+          exact: true,
+        }),
+        applyDialog = page.getByRole('dialog', {
+          name: 'Apply the default permission to existing Sessions?',
+          exact: true,
+        }),
+        applyFooter = applyDialog.locator('.pd-dialog-footer'),
+        applyState = async () => (await data()).permissionApply,
+        presetOf = async (id) =>
+          (await data()).sessions.find((s) => s.id === id)?.projectionValues
+            .permissions.currentValue,
+        resetApplyTargets = async () => {
+          for (const sessionId of [
+            'session-alpha-builder',
+            'session-alpha-reviewer',
+            'session-alpha-analyst',
+          ])
+            await api('/control', {
+              action: 'permissions',
+              sessionId,
+              sessionPreset: 'read-only',
+            })
+        }
+      // Preview is read-only, lists every exclusion category, and cancel writes nothing.
+      await applyButton.click()
+      await expect(applyDialog).toBeVisible()
+      await expect(
+        applyDialog.getByRole('region', { name: 'Targets' }),
+      ).toContainText('session-alpha-builder')
+      await expect(
+        applyDialog.getByRole('region', { name: 'Targets' }),
+      ).toContainText('Application')
+      await expect(
+        applyDialog.getByRole('region', { name: 'Excluded' }),
+      ).toContainText('Pending approval')
+      await expect(
+        applyDialog.getByRole('region', { name: 'Excluded' }),
+      ).toContainText('Agent is running')
+      await expect(
+        applyDialog.getByRole('region', { name: 'Excluded' }),
+      ).toContainText('Already at target')
+      await expect(
+        applyDialog.getByRole('region', { name: 'Unsupported' }),
+      ).toContainText('Archived Session')
+      await expect(
+        applyDialog.getByRole('region', { name: 'Unsupported' }),
+      ).toContainText('Cold Session (not live)')
+      await expect(
+        applyDialog.getByRole('region', { name: 'Unsupported' }),
+      ).toContainText('Child Session')
+      await expect(
+        applyDialog.getByRole('region', { name: 'Unsupported' }),
+      ).toContainText('Other/unregistered workspace')
+      await expect(
+        applyFooter.getByRole('button', {
+          name: 'Confirm and apply',
+          exact: true,
+        }),
+      ).toBeDisabled()
+      expect(await applyState()).toMatchObject({ attempts: {} })
+      await applyFooter
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .click()
+      await expect(applyDialog).toBeHidden()
+      expect(await applyState()).toMatchObject({ attempts: {} })
+      expect(await presetOf('session-alpha-builder')).toBe('read-only')
+      // Explicit acknowledgement applies exactly the preview targets once.
+      await applyButton.click()
+      await applyDialog.getByRole('checkbox').check()
+      await applyFooter
+        .getByRole('button', { name: 'Confirm and apply', exact: true })
+        .click()
+      await expect(
+        applyDialog.getByRole('region', { name: 'Apply result' }),
+      ).toContainText('Applied: 3')
+      expect((await applyState()).attempts).toMatchObject({
+        'session-alpha-builder': 1,
+        'session-alpha-reviewer': 1,
+        'session-alpha-analyst': 1,
+      })
+      for (const sessionId of [
+        'session-alpha-builder',
+        'session-alpha-reviewer',
+        'session-alpha-analyst',
+      ])
+        expect(await presetOf(sessionId)).toBe('workspace-write')
+      for (const sessionId of [
+        'session-alpha-runner',
+        'session-alpha-pending',
+        'session-alpha-child',
+        'session-beta-archived',
+        'session-foreign-live',
+      ])
+        expect(await presetOf(sessionId)).toBe('read-only')
+      await applyDialog
+        .getByRole('region', { name: 'Apply result' })
+        .scrollIntoViewIfNeeded()
+      await page.screenshot({ path: path.join(run, 'permission-apply.png') })
+      await applyFooter
+        .getByRole('button', { name: 'Done', exact: true })
+        .click()
+      // A changed Settings revision refuses the captured preview without retrying.
+      await resetApplyTargets()
+      await applyButton.click()
+      await expect(applyDialog).toContainText('Eligible Sessions: 3')
+      const staleAttempts = { ...(await applyState()).attempts }
+      await api('/control', {
+        action: 'permissions',
+        preset: 'workspace-write',
+      })
+      await applyDialog.getByRole('checkbox').check()
+      await applyFooter
+        .getByRole('button', { name: 'Confirm and apply', exact: true })
+        .click()
+      await expect(applyDialog.getByRole('alert')).toContainText(
+        'permission-stale',
+      )
+      await expect(applyDialog).toContainText(
+        'Permissions changed after the preview',
+      )
+      expect((await applyState()).attempts).toEqual(staleAttempts)
+      await applyFooter
+        .getByRole('button', { name: 'Refresh preview', exact: true })
+        .click()
+      await expect(applyDialog).toContainText('Eligible Sessions: 3')
+      await applyDialog.getByRole('checkbox').check()
+      await applyFooter
+        .getByRole('button', { name: 'Confirm and apply', exact: true })
+        .click()
+      await expect(
+        applyDialog.getByRole('region', { name: 'Apply result' }),
+      ).toContainText('Applied: 3')
+      await applyFooter
+        .getByRole('button', { name: 'Done', exact: true })
+        .click()
+      // Partial failure and read-back mismatch stay visible and are not retried.
+      await resetApplyTargets()
+      await api('/control', {
+        action: 'permissions',
+        failSessionId: 'session-alpha-builder',
+        mismatchSessionId: 'session-alpha-reviewer',
+      })
+      const beforeFailure = { ...(await applyState()).attempts }
+      await applyButton.click()
+      await applyDialog.getByRole('checkbox').check()
+      await applyFooter
+        .getByRole('button', { name: 'Confirm and apply', exact: true })
+        .click()
+      const failureResult = applyDialog.getByRole('region', {
+        name: 'Apply result',
+      })
+      await expect(failureResult).toContainText('Applied: 1')
+      await expect(failureResult).toContainText('Failed: 2')
+      await expect(failureResult).toContainText('Permission write failed')
+      await expect(failureResult).toContainText('Read-back did not match')
+      const afterFailure = { ...(await applyState()).attempts }
+      for (const sessionId of [
+        'session-alpha-builder',
+        'session-alpha-reviewer',
+        'session-alpha-analyst',
+      ])
+        expect(afterFailure[sessionId] ?? 0).toBe(
+          (beforeFailure[sessionId] ?? 0) + 1,
+        )
+      await page.waitForTimeout(250)
+      expect((await applyState()).attempts).toEqual(afterFailure)
+      await failureResult.scrollIntoViewIfNeeded()
+      await page.screenshot({
+        path: path.join(run, 'permission-apply-failure.png'),
+      })
+      await applyFooter
+        .getByRole('button', { name: 'Done', exact: true })
+        .click()
+      await api('/control', {
+        action: 'permissions',
+        failSessionId: null,
+        mismatchSessionId: null,
+      })
       await page
         .getByRole('button', { name: 'Permission settings', exact: true })
         .click()
@@ -759,6 +1053,10 @@ try {
       await page
         .getByRole('radio', { name: 'Full access', exact: true })
         .check()
+      const sessionsBeforeDefaultSave = (await data()).sessions.map((s) => [
+        s.id,
+        s.projectionValues.permissions.currentValue,
+      ])
       await page
         .getByRole('button', { name: 'Save default', exact: true })
         .click()
@@ -785,11 +1083,35 @@ try {
       await expect(settings).toContainText('saved and read back')
       expect((await current()).currentValue).toBe('danger-full-access')
       expect(
-        (await data()).sessions.every(
-          (s) =>
-            s.projectionValues.permissions.currentValue === 'workspace-write',
-        ),
-      ).toBe(true)
+        (await data()).sessions.map((s) => [
+          s.id,
+          s.projectionValues.permissions.currentValue,
+        ]),
+      ).toEqual(sessionsBeforeDefaultSave)
+      // v1 refuses to bulk-apply Full access; the preview stays visible.
+      await page
+        .getByRole('button', {
+          name: 'Close permission settings',
+          exact: true,
+        })
+        .click()
+      await applyButton.click()
+      await expect(applyDialog.getByRole('alert')).toContainText(
+        'v1 cannot bulk-apply Full access',
+      )
+      await expect(
+        applyFooter.getByRole('button', {
+          name: 'Confirm and apply',
+          exact: true,
+        }),
+      ).toBeDisabled()
+      await applyFooter
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .click()
+      await page
+        .getByRole('button', { name: 'Permission settings', exact: true })
+        .click()
+      await expect(settings).toBeVisible()
       await page
         .getByRole('radio', { name: 'Workspace write', exact: true })
         .check()
@@ -848,7 +1170,7 @@ try {
       results
         .at(-1)
         .assertions.push(
-          'No permission write on read/cancel; explicit scope confirmation and acknowledgement; revision conflict refuses stale edits; existing Sessions unchanged; provider read-only/unavailable recovery; default persists through restart',
+          'No permission write on read/cancel; explicit scope confirmation and acknowledgement; revision conflict refuses stale edits; existing Sessions unchanged after saving the default; default apply is a separate confirmed action with target count/scope; running, pending approval/question/plan-review and already-target Sessions excluded; archived/cold/child/other-workspace unsupported with reasons; applied effective permission read back; partial failure and read-back mismatch visible without retry; Full access bulk apply refused; provider read-only/unavailable recovery; default persists through restart',
         )
     } else if (id === 'ui-journeys') {
       await expect(cards).toHaveCount(7)
@@ -1007,6 +1329,9 @@ try {
       await chipForm
         .getByLabel('Acceptance criteria (optional)', { exact: true })
         .fill('Chip selections persist')
+      await chipForm
+        .getByLabel('Analyze issue before execution', { exact: true })
+        .uncheck()
       const workspaceChips = chipForm.getByRole('radiogroup', {
         name: 'All workspaces',
         exact: true,
@@ -1289,18 +1614,14 @@ try {
         .poll(async () => (await task(staged.id)).automationNote)
         .toBe('human-acceptance-required')
       expect((await task(staged.id)).reviewSessionId).toBe(reviewer)
-      await page
-        .getByLabel('Language', { exact: true })
-        .selectOption('zh')
+      await page.getByLabel('Language', { exact: true }).selectOption('zh')
       await expect(page.locator('.pd-next-detail')).toContainText(
         '独立核验已收集证据',
       )
       await expect(page.locator('.pd-next-detail')).not.toContainText(
         'Independent evidence is available',
       )
-      await page
-        .getByLabel('Language', { exact: true })
-        .selectOption('en')
+      await page.getByLabel('Language', { exact: true }).selectOption('en')
       await expect(
         page.getByRole('button', { name: 'Close details', exact: true }),
       ).toBeVisible()
@@ -1358,10 +1679,10 @@ try {
         descriptionImages = form.locator(
           '.pd-input-images[data-source=description]',
         ),
-        criteriaImages = form.locator(
-          '.pd-input-images[data-source=criteria]',
-        )
-      await form.getByLabel('Title', { exact: true }).fill('Image input lab task')
+        criteriaImages = form.locator('.pd-input-images[data-source=criteria]')
+      await form
+        .getByLabel('Title', { exact: true })
+        .fill('Image input lab task')
       await description.fill('Lab image input across all phases')
       await criteria.fill('Every phase receives the ordered lab fixture')
       await pasteLabImage(description, 'fixture-description.png', 'image/png')
@@ -1437,9 +1758,9 @@ try {
       ])
       await page.reload()
       await openTask(created.id)
-      await expect(page.locator('.pd-input-image-gallery .pd-input-image')).toHaveCount(
-        2,
-      )
+      await expect(
+        page.locator('.pd-input-image-gallery .pd-input-image'),
+      ).toHaveCount(2)
       await closeDetail()
       await page
         .getByRole('combobox', { name: 'All workspaces', exact: true })
@@ -1450,6 +1771,292 @@ try {
         .at(-1)
         .assertions.push(
           'Create and edit accept pasted PNG/JPEG/WebP with source labels and byte sizes; saved previews survive reload; image task completes analysis, execution and review',
+        )
+    } else if (id === 'multi-lane-dependencies') {
+      const dependency = await create('Dependency task', {
+        mode: 'manual',
+        intake: false,
+      })
+      const successor = await create('Dependent task', {
+        mode: 'manual',
+        intake: false,
+        dependencies: ['Dependency task'],
+      })
+      await closeDetail()
+      const successorCard = page
+        .locator('.pd-card')
+        .filter({ hasText: 'Dependent task' })
+      await expect(
+        successorCard.getByText('Waiting on dependencies', { exact: false }),
+      ).toBeVisible()
+      await successorCard.click()
+      const dependencySection = page
+        .locator('.pd-section')
+        .filter({ hasText: 'Dependencies' })
+      await expect(dependencySection).toContainText('Dependency task')
+      await expect(dependencySection).toContainText('To do')
+      await expect(dependencySection).toContainText('Not started')
+      await page.screenshot({
+        path: path.join(run, 'lane-dependency-waiting.png'),
+      })
+      await closeDetail()
+      await script(dependency.id, { holdPhase: 'execution' })
+      await script(successor.id, { holdPhase: 'execution' })
+      await setLanes(2)
+      await startWatch()
+      await waitForSnapshot(
+        (snapshot) =>
+          snapshot.dispatch.active.some((slot) => slot.taskId === dependency.id),
+        'dependency lane starts',
+      )
+      expect(
+        (await data()).snapshot.dispatch.active.some(
+          (slot) => slot.taskId === successor.id,
+        ),
+      ).toBe(false)
+      expect((await task(successor.id)).status).toBe('todo')
+      await release(dependency.id)
+      await acceptThroughApi(dependency.id)
+      await waitForSnapshot(
+        (snapshot) =>
+          snapshot.dispatch.active.some((slot) => slot.taskId === successor.id),
+        'successor starts after the dependency is done',
+      )
+      expect((await task(dependency.id)).status).toBe('done')
+      expect((await task(successor.id)).status).toBe('in-progress')
+      await release(successor.id)
+      await waitForSnapshot(
+        (snapshot) =>
+          snapshot.tasks.find((t) => t.id === successor.id)?.status ===
+          'in-review',
+        'successor reports without auto-acceptance',
+      )
+      expect((await task(successor.id)).completion).toBe(null)
+      results
+        .at(-1)
+        .assertions.push(
+          'owner-selected dependency is visible on card and detail, gates claim, and unlocks the successor only after the dependency is done',
+        )
+    } else if (id === 'resource-conflict') {
+      const holder = await create('Resource holder', {
+        mode: 'manual',
+        intake: false,
+        resourceKeys: ['port:3100'],
+      })
+      const waiter = await create('Resource waiter', {
+        mode: 'manual',
+        intake: false,
+        resourceKeys: ['port:3100'],
+      })
+      await closeDetail()
+      const waiterCard = page
+        .locator('.pd-card')
+        .filter({ hasText: 'Resource waiter' })
+      await waiterCard.click()
+      const resourceSection = page
+        .locator('.pd-section')
+        .filter({ hasText: 'Resource keys' })
+      await expect(resourceSection).toContainText('port:3100')
+      await expect(resourceSection).toContainText('Free')
+      await closeDetail()
+      await script(holder.id, { holdPhase: 'execution' })
+      await script(waiter.id, { holdPhase: 'execution' })
+      await setLanes(2)
+      await startWatch()
+      await waitForSnapshot(
+        (snapshot) =>
+          snapshot.dispatch.active.some((slot) => slot.taskId === holder.id),
+        'resource holder starts',
+      )
+      expect(
+        (await data()).snapshot.dispatch.active.some(
+          (slot) => slot.taskId === waiter.id,
+        ),
+      ).toBe(false)
+      await expect(
+        waiterCard.getByText('In use', { exact: false }),
+      ).toBeVisible()
+      await waiterCard.click()
+      await expect(resourceSection).toContainText('Resource holder')
+      await expect(resourceSection).toContainText('Held by')
+      await page.screenshot({
+        path: path.join(run, 'lane-resource-holder.png'),
+      })
+      await closeDetail()
+      await release(holder.id)
+      await waitForSnapshot(
+        (snapshot) =>
+          snapshot.dispatch.active.some((slot) => slot.taskId === waiter.id),
+        'waiter starts only after the holder leaves in-progress',
+      )
+      expect((await task(waiter.id)).status).toBe('in-progress')
+      await release(waiter.id)
+      await waitForSnapshot(
+        (snapshot) =>
+          snapshot.tasks.find((t) => t.id === waiter.id)?.status === 'in-review',
+        'waiter reports',
+      )
+      results
+        .at(-1)
+        .assertions.push(
+          'tasks sharing a resource key never overlap; the current holder is visible on the card and detail and is released when it leaves in-progress',
+        )
+    } else if (id === 'lane-cap') {
+      const first = await create('Lane one', { mode: 'manual', intake: false })
+      const second = await create('Lane two', { mode: 'manual', intake: false })
+      const third = await create('Lane three', { mode: 'manual', intake: false })
+      for (const task of [first, second, third])
+        await script(task.id, { holdPhase: 'execution' })
+      await setLanes(2)
+      await startWatch()
+      await waitForSnapshot(
+        (snapshot) =>
+          snapshot.dispatch.active.filter((slot) => slot.phase === 'execution')
+            .length === 2,
+        'two lanes active',
+      )
+      const active = (await data()).snapshot.dispatch.active.map(
+        (slot) => slot.taskId,
+      )
+      expect(active).not.toContain(third.id)
+      await page.screenshot({ path: path.join(run, 'lane-cap-active.png') })
+      expect((await task(third.id)).status).toBe('todo')
+      await release(active[0])
+      await waitForSnapshot(
+        (snapshot) =>
+          snapshot.dispatch.active.some((slot) => slot.taskId === third.id),
+        'third task reuses a freed lane',
+      )
+      expect(
+        (await data()).snapshot.dispatch.active.filter(
+          (slot) => slot.phase === 'execution',
+        ).length,
+      ).toBe(2)
+      for (const id of (await data()).snapshot.dispatch.active.map(
+        (slot) => slot.taskId,
+      ))
+        await release(id)
+      await waitForSnapshot(
+        (snapshot) =>
+          [first.id, second.id, third.id].every(
+            (id) =>
+              snapshot.tasks.find((task) => task.id === id)?.status ===
+              'in-review',
+          ),
+        'all three lanes report',
+      )
+      results
+        .at(-1)
+        .assertions.push(
+          'persisted lanes=2 bound concurrent execution, the third task waits, and freed lanes are reused',
+        )
+    } else if (id === 'lane-failure-isolation') {
+      const failing = await create('Failing lane', {
+        mode: 'manual',
+        intake: false,
+      })
+      const healthy = await create('Healthy lane', {
+        mode: 'manual',
+        intake: false,
+      })
+      await script(failing.id, { promptFailure: true })
+      await script(healthy.id, { holdPhase: 'execution' })
+      await setLanes(2)
+      await startWatch()
+      await waitForSnapshot(
+        (snapshot) =>
+          snapshot.tasks.find((task) => task.id === failing.id)?.status ===
+          'blocked',
+        'failing lane blocks only itself',
+      )
+      expect((await task(healthy.id)).status).toBe('in-progress')
+      expect((await data()).snapshot.dispatch.error).toContain(
+        'Scripted prompt failure',
+      )
+      await page.screenshot({
+        path: path.join(run, 'lane-failure-paused.png'),
+      })
+      await expect(
+        page.getByText('Queue paused', { exact: false }).first(),
+      ).toBeVisible()
+      await release(healthy.id)
+      await waitForSnapshot(
+        (snapshot) =>
+          snapshot.tasks.find((task) => task.id === healthy.id)?.status ===
+          'in-review',
+        'healthy lane still reports',
+      )
+      expect((await task(failing.id)).evidence).toContain(
+        'Scripted prompt failure',
+      )
+      results
+        .at(-1)
+        .assertions.push(
+          'one lane failure blocks only that task and pauses new starts while another in-flight lane still reports evidence',
+        )
+    } else if (id === 'restart-stale-claim') {
+      const stale = await create('Stale claim', {
+        mode: 'manual',
+        intake: false,
+        resourceKeys: ['branch:main'],
+      })
+      const waiting = await create('Waiting on stale key', {
+        mode: 'manual',
+        intake: false,
+        resourceKeys: ['branch:main'],
+      })
+      await api('/control', { action: 'claim', id: stale.id })
+      await setLanes(3)
+      await api('/control', { action: 'restart' })
+      await page.reload()
+      await waitForSnapshot(
+        (snapshot) =>
+          snapshot.tasks.find((task) => task.id === stale.id)?.status ===
+          'in-progress',
+        'stale claim survives restart',
+      )
+      const restarted = (await data()).snapshot
+      expect(restarted.settings.workspaces.alpha.lanes).toBe(3)
+      expect(restarted.dispatch.enabled).toBe(false)
+      expect(restarted.dispatch.active).toEqual([])
+      expect(restarted.tasks.find((task) => task.id === stale.id).version).toBe(2)
+      expect(restarted.tasks.find((task) => task.id === waiting.id).status).toBe(
+        'todo',
+      )
+      await page.screenshot({
+        path: path.join(run, 'restart-stale-claim-state.png'),
+      })
+      await script(stale.id, { holdPhase: 'execution' })
+      await startWatch()
+      await page.waitForTimeout(400)
+      expect((await task(stale.id)).status).toBe('in-progress')
+      expect((await task(waiting.id)).status).toBe('todo')
+      expect((await data()).snapshot.dispatch.active).toEqual([])
+      const current = await task(stale.id)
+      await api('/command/update', {
+        requestId: crypto.randomUUID(),
+        id: stale.id,
+        expectedVersion: current.version,
+        action: 'retry',
+      })
+      await waitForSnapshot(
+        (snapshot) =>
+          snapshot.tasks.find((task) => task.id === stale.id)?.status ===
+          'in-progress',
+        'owner retry reclaims the released key',
+      )
+      expect((await task(waiting.id)).status).toBe('todo')
+      await release(stale.id)
+      await waitForSnapshot(
+        (snapshot) =>
+          snapshot.tasks.find((task) => task.id === stale.id)?.status ===
+          'in-review',
+        'recovered task reports',
+      )
+      results
+        .at(-1)
+        .assertions.push(
+          'persisted lanes survive restart, stale in-progress work keeps its key without replay, and the existing retry command releases it',
         )
     } else if (id === 'recovery') {
       const completed = await create('Sessions survive recovery')

@@ -12,9 +12,23 @@ import type {
   CompletionReceipt,
   ImageInputLimits,
   InputImage,
+  LaneRequest,
+  BoardWorkspaceSettings,
 } from '../contract/types.ts'
 import { reviewPrompt } from './prompts.ts'
 import { detectTaskLanguage } from '../contract/language.ts'
+import {
+  blockedByEarlierSameKey,
+  coordinationProblem,
+  dependenciesProblem,
+  dependenciesSatisfied,
+  dependencyNote,
+  executionReady,
+  invalidatedSuccessors,
+  resourceHolders,
+  resourceKeysProblem,
+  resolveLanes,
+} from '../contract/coordination.ts'
 import {
   DEFAULT_IMAGE_LIMITS,
   InputImageError,
@@ -24,6 +38,7 @@ import {
   manualPolicy,
   completionPolicySchema,
   analysisSchema,
+  storedAnalysisSchema,
   reviewSchema,
   receiptSchema,
   canAutoComplete,
@@ -67,6 +82,8 @@ export const taskSchema = z.object({
   images: z.array(imageSchema).max(12).default([]),
   inputImages: z.array(inputImageSchema).max(4).default([]),
   language: z.enum(['zh', 'en']).nullable().default(null),
+  dependencies: z.array(z.string()).default([]),
+  resourceKeys: z.array(z.string()).default([]),
   priority: z.number().int().min(0).max(2),
   assignee: z.string().nullable(),
   sessionId: z.string().nullable(),
@@ -78,7 +95,7 @@ export const taskSchema = z.object({
   intake: z.boolean().default(false),
   needsManual: z.boolean().default(false),
   analysisSessionId: z.string().nullable().default(null),
-  analysis: analysisSchema.nullable().default(null),
+  analysis: storedAnalysisSchema.nullable().default(null),
   reviewSessionId: z.string().nullable().default(null),
   reviewPromptHash: z.string().nullable().default(null),
   review: reviewSchema.nullable().default(null),
@@ -105,12 +122,38 @@ export const boardSchema = z.object({
       task: taskSchema,
     }),
   ),
+  // Additive persisted settings. Legacy boards parse with the default and are
+  // not rewritten on read; the next mutation persists the parsed shape.
+  settings: z
+    .object({
+      workspaces: z
+        .record(
+          z.string(),
+          z.object({
+            lanes: z.number().int().min(1).max(4).default(2),
+          }),
+        )
+        .default({}),
+    })
+    .default({ workspaces: {} }),
+  settingsReceipts: z
+    .array(
+      z.object({
+        requestId: z.string(),
+        fingerprint: z.string(),
+        workspaceId: z.string(),
+        lanes: z.number().int().min(1).max(4),
+      }),
+    )
+    .default([]),
 })
 export const initialBoard = (): Board => ({
   revision: 0,
   tasks: [],
   ledger: [],
   receipts: [],
+  settings: { workspaces: {} },
+  settingsReceipts: [],
 })
 const requestId = z.string().min(1).max(150)
 const text = z.string().trim().min(1).max(300)
@@ -127,6 +170,8 @@ export const createSchema = z.strictObject({
   completionPolicy: completionPolicySchema.optional(),
   inputImages: inputImagesSchema,
   language: z.enum(['zh', 'en']).optional(),
+  dependencies: z.array(z.string().min(1).max(150)).max(20).optional(),
+  resourceKeys: z.array(z.string().max(128)).max(8).optional(),
 })
 export const updateSchema = z.strictObject({
   requestId,
@@ -152,6 +197,8 @@ export const updateSchema = z.strictObject({
   completionPolicy: completionPolicySchema.optional(),
   needsManual: z.boolean().optional(),
   inputImages: inputImagesSchema,
+  dependencies: z.array(z.string().min(1).max(150)).max(20).optional(),
+  resourceKeys: z.array(z.string().max(128)).max(8).optional(),
 })
 export class BoardError extends Error {
   constructor(
@@ -208,6 +255,108 @@ export class BoardController {
       throw new BoardError('workspace-missing', 'Workspace is unavailable')
     return ws
   }
+  /**
+   * Persisted dependents that have not started are blocked in the same commit
+   * as a blocked/needs-info/reopened/archived dependency. Running descendants
+   * keep running; presentation derives their attention separately.
+   */
+  private invalidateSuccessors(
+    b: Board,
+    changed: Task,
+    previous: Task,
+  ): Task[] {
+    const invalidated =
+      (changed.archived && !previous.archived) ||
+      (['blocked', 'needs-info'].includes(changed.status) &&
+        changed.status !== previous.status) ||
+      (previous.status === 'done' && changed.status !== 'done')
+    if (!invalidated) return []
+    const status = changed.archived ? 'archived' : changed.status
+    return invalidatedSuccessors(changed.id, status, b.tasks).map(
+      (successor) => {
+        const target = b.tasks.find((t) => t.id === successor.taskId)!
+        return {
+          ...target,
+          status: 'blocked' as const,
+          automationNote: dependencyNote(successor.dependencyId, status),
+          version: target.version + 1,
+          updatedAt: this.env.now(),
+        }
+      },
+    )
+  }
+  /** Persisted lane count for one workspace; invalid/legacy values read as 2. */
+  lanes(workspaceId: string): number {
+    return resolveLanes(
+      this.snapshot().settings.workspaces[workspaceId]?.lanes,
+    )
+  }
+  settings(workspaceId: string): BoardWorkspaceSettings {
+    return { lanes: this.lanes(workspaceId) }
+  }
+  /**
+   * Owner-only persisted lane setting, separate from strict dispatch commands.
+   * requestId reuse returns the original result; a changed payload is refused.
+   */
+  setLanes(
+    raw: LaneRequest,
+  ): Promise<{ workspaceId: string; lanes: number; revision: number }> {
+    const r = z
+      .strictObject({
+        requestId: requestId,
+        workspaceId: z.string().min(1),
+        lanes: z.number().int().min(1).max(4),
+      })
+      .parse(raw)
+    return this.write(async () => {
+      const b = this.snapshot()
+      this.workspace(r.workspaceId)
+      const fingerprint = createHash('sha256')
+        .update(JSON.stringify({ request: r, actor: 'human' }))
+        .digest('hex')
+      const prior = b.settingsReceipts.find(
+        (receipt) => receipt.requestId === r.requestId,
+      )
+      if (prior) {
+        if (prior.fingerprint !== fingerprint)
+          throw new BoardError(
+            'request-reused',
+            'Request identity was already used',
+          )
+        return {
+          workspaceId: prior.workspaceId,
+          lanes: prior.lanes,
+          revision: b.revision,
+        }
+      }
+      b.settings.workspaces[r.workspaceId] = { lanes: r.lanes }
+      b.revision++
+      b.ledger.push({
+        seq: b.revision,
+        taskId: r.workspaceId,
+        action: 'settings-lanes',
+        actor: 'human',
+        time: this.env.now(),
+      })
+      b.settingsReceipts.push({
+        requestId: r.requestId,
+        fingerprint,
+        workspaceId: r.workspaceId,
+        lanes: r.lanes,
+      })
+      boardSchema.parse(b)
+      await this.persistence.set(b)
+      for (const notify of this.listeners)
+        try {
+          notify()
+        } catch {}
+      return {
+        workspaceId: r.workspaceId,
+        lanes: r.lanes,
+        revision: b.revision,
+      }
+    })
+  }
   private imageLimits(): ImageInputLimits {
     return this.env.imageLimits?.() ?? DEFAULT_IMAGE_LIMITS
   }
@@ -250,10 +399,18 @@ export class BoardController {
         'Session belongs to another workspace',
       )
   }
+  /**
+   * One durable commit may also invalidate not-started dependents. They share
+   * the commit revision; each successor is written atomically with the root.
+   */
   private mutate(
     request: { requestId: string },
     actor: string,
-    decide: (b: Board) => { task: Task; action: string },
+    decide: (b: Board) => {
+      task: Task
+      action: string
+      successors?: Task[]
+    },
   ): Promise<Task> {
     return this.write(async () => {
       const b = this.snapshot()
@@ -269,10 +426,15 @@ export class BoardController {
           )
         return structuredClone(prior.task)
       }
-      const { task, action } = decide(b)
+      const { task, action, successors = [] } = decide(b)
       const at = b.tasks.findIndex((t) => t.id === task.id)
       if (at < 0) b.tasks.push(task)
       else b.tasks[at] = task
+      for (const successor of successors) {
+        const index = b.tasks.findIndex((t) => t.id === successor.id)
+        if (index < 0) b.tasks.push(successor)
+        else b.tasks[index] = successor
+      }
       b.revision++
       b.ledger.push({
         seq: b.revision,
@@ -281,6 +443,14 @@ export class BoardController {
         actor,
         time: this.env.now(),
       })
+      for (const successor of successors)
+        b.ledger.push({
+          seq: b.revision,
+          taskId: successor.id,
+          action: 'dependency-invalidated',
+          actor,
+          time: this.env.now(),
+        })
       b.receipts.push({
         requestId: request.requestId,
         fingerprint,
@@ -297,7 +467,7 @@ export class BoardController {
   }
   create(raw: CreateCommand) {
     const r = createSchema.parse(raw)
-    return this.mutate(r, 'human', () => {
+    return this.mutate(r, 'human', (b) => {
       if (!r.intake && !r.criteria.length)
         throw new BoardError(
           'criteria-required',
@@ -311,6 +481,22 @@ export class BoardController {
       if (policyProblem)
         throw new BoardError('policy-incomplete', policyProblem)
       const now = this.env.now()
+      const id = this.env.id()
+      const dependencies = r.dependencies ?? []
+      const dependencyProblem = dependenciesProblem(
+        id,
+        dependencies,
+        b.tasks,
+        r.workspaceId,
+      )
+      if (dependencyProblem)
+        throw new BoardError(
+          dependencyProblem.code,
+          dependencyProblem.message,
+        )
+      const resourceProblem = resourceKeysProblem(r.resourceKeys ?? [])
+      if (resourceProblem)
+        throw new BoardError(resourceProblem.code, resourceProblem.message)
       return {
         action: 'create',
         task: {
@@ -319,8 +505,10 @@ export class BoardController {
           description: r.description,
           priority: r.priority,
           assignee: r.assignee,
-          id: this.env.id(),
+          id,
           criteria: [...r.criteria],
+          dependencies: [...dependencies],
+          resourceKeys: [...(r.resourceKeys ?? [])],
           checked: r.criteria.map(() => false),
           evidence: '',
           images: [],
@@ -380,7 +568,9 @@ export class BoardController {
           r.description !== undefined ||
           r.completionPolicy !== undefined ||
           r.needsManual !== undefined ||
-          r.inputImages !== undefined)
+          r.inputImages !== undefined ||
+          r.dependencies !== undefined ||
+          r.resourceKeys !== undefined)
       )
         throw new BoardError(
           'frozen',
@@ -405,6 +595,23 @@ export class BoardController {
         if (r.needsManual !== undefined) task.needsManual = r.needsManual
         if (r.inputImages !== undefined)
           task.inputImages = structuredClone(r.inputImages)
+        if (r.dependencies !== undefined) {
+          const problem = dependenciesProblem(
+            old.id,
+            r.dependencies,
+            b.tasks,
+            old.workspaceId,
+          )
+          if (problem)
+            throw new BoardError(problem.code, problem.message)
+          task.dependencies = [...r.dependencies]
+        }
+        if (r.resourceKeys !== undefined) {
+          const problem = resourceKeysProblem(r.resourceKeys)
+          if (problem)
+            throw new BoardError(problem.code, problem.message)
+          task.resourceKeys = [...r.resourceKeys]
+        }
         if (r.completionPolicy !== undefined || r.criteria !== undefined) {
           const policyProblem = completionPolicyProblem(
             task.completionPolicy,
@@ -420,7 +627,13 @@ export class BoardController {
           r.completionPolicy !== undefined ||
           r.needsManual !== undefined ||
           (r.inputImages !== undefined &&
-            JSON.stringify(r.inputImages) !== JSON.stringify(old.inputImages))
+            JSON.stringify(r.inputImages) !== JSON.stringify(old.inputImages)) ||
+          (r.dependencies !== undefined &&
+            JSON.stringify(task.dependencies) !==
+              JSON.stringify(old.dependencies)) ||
+          (r.resourceKeys !== undefined &&
+            JSON.stringify(task.resourceKeys) !==
+              JSON.stringify(old.resourceKeys))
         if (scopeChanged) {
           task.analysis = null
           task.analysisSessionId = null
@@ -565,7 +778,11 @@ export class BoardController {
           task.automationNote = ''
         }
       }
-      return { task, action: r.action }
+      return {
+        task,
+        action: r.action,
+        successors: this.invalidateSuccessors(b, task, old),
+      }
     })
   }
   claim(sessionId: string, raw: AgentRequest) {
@@ -596,22 +813,57 @@ export class BoardController {
           throw new BoardError('busy', 'Session already owns an active task')
         return { task: own, action: 'claim-reaffirmed' }
       }
-      const choices = b.tasks
+      const base = b.tasks.filter(
+        (t) =>
+          !t.archived &&
+          t.workspaceId === ws.id &&
+          t.status === 'todo' &&
+          t.criteria.length > 0 &&
+          (!t.intake ||
+            (!!t.analysis &&
+              ['express', 'staged'].includes(t.analysis.route))) &&
+          (!t.assignee || t.assignee === sessionId) &&
+          (!r.taskId || t.id === r.taskId),
+      )
+      const choices = base
         .filter(
           (t) =>
-            !t.archived &&
-            t.workspaceId === ws.id &&
-            t.status === 'todo' &&
-            t.criteria.length > 0 &&
-            (!t.intake ||
-              (!!t.analysis &&
-                ['express', 'staged'].includes(t.analysis.route))) &&
-            (!t.assignee || t.assignee === sessionId) &&
-            (!r.taskId || t.id === r.taskId),
+            dependenciesSatisfied(t, b.tasks) &&
+            !resourceHolders(t, b.tasks).length &&
+            !blockedByEarlierSameKey(t, b.tasks, sessionId),
         )
         .sort((a, b) => b.priority - a.priority || a.createdAt - b.createdAt)
       const task = choices[0]
-      if (!task) throw new BoardError('queue-empty', 'No eligible task')
+      if (!task) {
+        // A specifically requested task gets the exact admission reason; other
+        // candidates fall through only when none is runnable at all.
+        const requested = r.taskId
+          ? base.find((t) => t.id === r.taskId)
+          : undefined
+        if (requested && !dependenciesSatisfied(requested, b.tasks)) {
+          const waiting = requested.dependencies.filter(
+            (id) => b.tasks.find((t) => t.id === id)?.status !== 'done',
+          )
+          throw new BoardError(
+            'dependency-wait',
+            `Dependencies are not complete: ${waiting.join(', ')}`,
+          )
+        }
+        if (requested) {
+          const holders = resourceHolders(requested, b.tasks)
+          if (holders.length)
+            throw new BoardError(
+              'resource-busy',
+              `Resource ${holders[0]!.key} is held by ${holders[0]!.taskId}; v1 waits without preemption`,
+            )
+          if (blockedByEarlierSameKey(requested, b.tasks, sessionId))
+            throw new BoardError(
+              'resource-order',
+              'An earlier task with the same resource key is still runnable',
+            )
+        }
+        throw new BoardError('queue-empty', 'No eligible task')
+      }
       return {
         action: 'claim',
         task: {
@@ -661,34 +913,39 @@ export class BoardController {
           'criteria-mismatch',
           'Image criterion is outside the acceptance list',
         )
+      const next: Task = {
+        ...task,
+        evidence: r.evidence,
+        images: r.images ?? [],
+        status: r.outcome === 'blocked' ? 'blocked' : 'in-review',
+        version: task.version + 1,
+        updatedAt: this.env.now(),
+        review: null,
+        reviewSessionId: null,
+        completion: null,
+        automationNote: '',
+        checked: task.criteria.map(() => false),
+      }
       return {
         action: 'report',
-        task: {
-          ...task,
-          evidence: r.evidence,
-          images: r.images ?? [],
-          status: r.outcome === 'blocked' ? 'blocked' : 'in-review',
-          version: task.version + 1,
-          updatedAt: this.env.now(),
-          review: null,
-          reviewSessionId: null,
-          completion: null,
-          automationNote: '',
-          checked: task.criteria.map(() => false),
-        },
+        task: next,
+        successors: this.invalidateSuccessors(b, next, task),
       }
     })
   }
+  /**
+   * Execution candidates: dependencies done, no in-progress holder of any key.
+   * Analysis eligibility is separate; dependencies gate execution, not planning.
+   */
   eligible(workspaceId: string) {
-    return this.snapshot()
-      .tasks.filter(
+    const tasks = this.snapshot().tasks
+    return tasks
+      .filter(
         (t) =>
           t.workspaceId === workspaceId &&
-          !t.archived &&
-          t.status === 'todo' &&
-          t.criteria.length > 0 &&
-          (!t.intake ||
-            (!!t.analysis && ['express', 'staged'].includes(t.analysis.route))),
+          executionReady(t) &&
+          dependenciesSatisfied(t, tasks) &&
+          !resourceHolders(t, tasks).length,
       )
       .sort((a, b) => b.priority - a.priority || a.createdAt - b.createdAt)
   }
@@ -780,6 +1037,18 @@ export class BoardController {
           'criteria-required',
           'Executable analysis requires criteria',
         )
+      // Coordination is a machine-readable suggestion. It is validated against
+      // the same workspace/self/cycle rules as owner declarations but is never
+      // copied into Task.dependencies or Task.resourceKeys here.
+      if (r.analysis.coordination) {
+        const problem = coordinationProblem(
+          old.id,
+          old.workspaceId,
+          r.analysis.coordination,
+          b.tasks,
+        )
+        if (problem) throw new BoardError(problem.code, problem.message)
+      }
       const analysis = {
         ...r.analysis,
         route:
@@ -807,7 +1076,11 @@ export class BoardController {
               ? analysis.questions.join('\n')
               : '',
       }
-      return { action: 'analysis-report', task: next }
+      return {
+        action: 'analysis-report',
+        task: next,
+        successors: this.invalidateSuccessors(b, next, old),
+      }
     })
   }
   beginReview(sessionId: string, id: string, expectedVersion: number) {
