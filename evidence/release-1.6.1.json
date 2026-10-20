@@ -1,0 +1,132 @@
+{
+ "version": "1.6.1",
+ "commit": "c9757bcc5209ea4b0dd333426f630866a54aae16",
+ "tarball": "perse-dashboard-1.6.1.tgz",
+ "tarballSha256": "8493dae6fa6602ab13b20d3fe4a2a14afb40812b9235e50e2d231e8ff1f7d43e",
+ "installedVersion": "1.6.1",
+ "install": {
+  "application": "applied",
+  "stage": "enable",
+  "enabled": true,
+  "source": "file:/Users/lxl/Documents/anything/perse-dashboard/perse-dashboard-1.6.1.tgz"
+ },
+ "tests": {
+  "command": "npm run check",
+  "tests": 62,
+  "status": "passed"
+ },
+ "fixes": [
+  "Explicit acceptance clears the pre-acceptance automation note; completed tasks never present a pending gate.",
+  "Verified completion policies are rejected at create/update unless exactly one machine check covers every criterion.",
+  "A stopped-queue message is shown when a workspace has eligible tasks but its queue is not running."
+ ],
+ "liveVerification": {
+  "base": "http://127.0.0.1:64338",
+  "revision": 69,
+  "dispatch": {
+   "enabled": false,
+   "workspaceId": null,
+   "activeTaskId": null,
+   "activeSessionId": null,
+   "error": null,
+   "errorTaskId": null,
+   "watch": false,
+   "processed": 0,
+   "maxTasks": 10
+  },
+  "capabilities": {
+   "create": true,
+   "update": true,
+   "dispatch": true,
+   "analyze": true,
+   "verify": true,
+   "imageInput": true
+  },
+  "tasks": [
+   {
+    "id": "0289eab0-f685-494d-9196-3b651e3c722b",
+    "title": "修改当前看板整体颜色风格",
+    "status": "done",
+    "route": "staged",
+    "risk": "low",
+    "questions": 5,
+    "completionPolicy": "verified",
+    "checks": 0,
+    "checked": 6,
+    "criteria": 6,
+    "automationNote": "",
+    "completionKind": "human"
+   },
+   {
+    "id": "60c2d41e-2da8-4f4d-a020-c069f3c33c07",
+    "title": "任务说明和验收标准不支持贴图片",
+    "status": "done",
+    "route": "staged",
+    "risk": "medium",
+    "questions": 5,
+    "completionPolicy": "verified",
+    "checks": 0,
+    "checked": 10,
+    "criteria": 10,
+    "automationNote": "",
+    "completionKind": "human"
+   },
+   {
+    "id": "c1443abe-ff80-46f1-bc2b-2db61584f554",
+    "title": "DSH 默认权限设置修改后支持修改已有的所有会话的默认权限",
+    "status": "todo",
+    "route": "staged",
+    "risk": "medium",
+    "questions": 0,
+    "completionPolicy": "reviewed",
+    "checks": 0,
+    "checked": 0,
+    "criteria": 6,
+    "automationNote": "",
+    "completionKind": null
+   },
+   {
+    "id": "98be9a78-e25b-460e-a25b-be90ae6a6a25",
+    "title": "自动化处理支持多路数处理",
+    "status": "todo",
+    "route": "staged",
+    "risk": "medium",
+    "questions": 4,
+    "completionPolicy": "reviewed",
+    "checks": 0,
+    "checked": 0,
+    "criteria": 8,
+    "automationNote": "",
+    "completionKind": null
+   },
+   {
+    "id": "56d99b8d-279b-45d8-a673-dcb47bc1b7c2",
+    "title": "任务语言不一致",
+    "status": "done",
+    "route": "staged",
+    "risk": "medium",
+    "questions": 4,
+    "completionPolicy": "verified",
+    "checks": 0,
+    "checked": 10,
+    "criteria": 10,
+    "automationNote": "",
+    "completionKind": "human"
+   }
+  ],
+  "queueStoppedNotice": "队列已停止。启动后会处理下方可执行的任务。",
+  "doneTaskStaleNoteVisible": false,
+  "pageErrors": []
+ },
+ "boardCleanup": {
+  "56d99b8d": "Accepted after appending commit/push/install evidence; criterion 3 live questions-empty and criterion 9 read-only legacy check disclosed.",
+  "c1443abe": "Rewritten to the approved live-only v1 scope with six owner criteria; re-analyzed to todo (staged/medium, no questions).",
+  "98be9a78": "Rewritten to the approved bounded v1 scope with eight owner criteria; re-analyzed to todo (staged/medium, four non-blocking edge-case questions with defaults)."
+ },
+ "limitations": [
+  "The 1.6.0 language task recorded a live run with empty questions; the task evidence states that limitation rather than claiming nonempty Chinese questions.",
+  "The five legacy tasks were not re-executed during the 1.6.0 acceptance; their legacy-row loading/analysis evidence is contract/lab/native plus a read-only board check.",
+  "The multi-lane task remains staged/medium with four non-blocking questions; execution is intentionally left for the owner.",
+  "The queue is stopped after the 1.6.1 hot reload; starting it later processes the two todo tasks."
+ ]
+}
