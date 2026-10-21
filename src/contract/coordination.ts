@@ -306,6 +306,9 @@ export function dependencyCandidates(
       (task) =>
         task.workspaceId === workspaceId &&
         !task.archived &&
+        // A completed dependency is already satisfied; offering it only adds
+        // noise to the create/edit picker.
+        task.status !== 'done' &&
         task.id !== selfId &&
         !createsCycle(selfId, task.id, tasks),
     )

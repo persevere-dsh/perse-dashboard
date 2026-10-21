@@ -1,6 +1,28 @@
 # Changelog
 
-## 1.8.0
+## 1.9.3
+
+- Keep the create/cancel actions at the end of the create form instead of a sticky footer, so the footer no longer covers the execution or advanced fields at the first scroll position.
+
+## 1.9.2
+
+- Replace the create-dialog executor chip list with a compact, accessible select: workspace queue by default, execution-capable Sessions only, busy Sessions disabled, analysis/review Sessions filtered from the ledger as well as current phase links.
+- Add scroll clearance so the sticky create/cancel footer never hides the last execution or advanced fields.
+
+## 1.9.1
+
+- Filter historical analysis/review phase Sessions from the create/edit executor picker using the audit ledger, not only the current task phase links. Orphaned retry Sessions no longer appear as assignable executors.
+
+## 1.9.0
+
+- Redesign the create-task dialog around the task, not the scheduler: one column, "Task details" then "Execution", with dependencies, resource keys, manual validation and machine rules under a collapsed "Advanced settings" disclosure.
+- Dependency candidates now exclude completed tasks, selected dependencies render as removable chips, and a search field appears for larger workspaces.
+- The executor control defaults to the workspace queue, excludes analysis/review phase Sessions, marks busy Sessions, and supports per-option disabled state.
+- Resource keys use a type/value builder (file, port, build directory, database, branch, other) while persisting the same `namespace:value` vocabulary.
+- The completion mode is a simple selector in the execution section; instructions and machine checks remain in advanced settings.
+- Clarify "Analyze before execution" and empty acceptance criteria. The create-task dialog now shows a short task-first summary and the advanced summary only lists configured constraints.
+
+
 
 - Add the owner-only `repairPolicy` command for in-review tasks: update the completion policy, clear the stale completion/review result and re-run verification or a fresh independent review without repeating execution. A running linked Agent blocks the repair.
 - Add structured needs-info answers: the task detail records question/answer pairs, clears the old analysis and generated criteria, and re-analyzes with the owner answers as authoritative facts. Answers and questions remain visible after the re-analysis boundary.

@@ -549,3 +549,28 @@ test('BoardError exposes stable coordination codes', () => {
   const error = new BoardError('dependency-cycle', 'cycle')
   assert.equal(error.code, 'dependency-cycle')
 })
+
+test('completed tasks are not offered as dependency candidates', () => {
+  const base = {
+    workspaceId: 'ws',
+    archived: false,
+    dependencies: [],
+    resourceKeys: [],
+    criteria: [],
+    checked: [],
+    evidence: '',
+    createdAt: 1,
+  }
+  const candidates = dependencyCandidates(
+    [
+      { ...base, id: 'done', title: 'Done', status: 'done' },
+      { ...base, id: 'todo', title: 'Todo', status: 'todo' },
+    ],
+    'ws',
+    null,
+  )
+  assert.deepEqual(
+    candidates.map((candidate) => candidate.id),
+    ['todo'],
+  )
+})

@@ -7,25 +7,33 @@ export function CompletionEditor({
   change,
   t,
   disabled = false,
+  showMode = true,
 }: {
   value: CompletionPolicy
   change: (p: CompletionPolicy) => void
   t: Injected['t']
   disabled?: boolean
+  showMode?: boolean
 }) {
   return (
     <div className="pd-policy">
-      <OptionGroup
-        label={t('completionMode')}
-        disabled={disabled}
-        value={value.mode}
-        change={(mode) => change({ ...value, mode })}
-        options={(['manual', 'verified', 'reviewed'] as const).map((mode) => ({
-          value: mode,
-          text: t(mode),
-        }))}
-      />
-      <p className="pd-muted">{t('completionHelp')}</p>
+      {showMode && (
+        <>
+          <OptionGroup
+            label={t('completionMode')}
+            disabled={disabled}
+            value={value.mode}
+            change={(mode) => change({ ...value, mode })}
+            options={(['manual', 'verified', 'reviewed'] as const).map(
+              (mode) => ({
+                value: mode,
+                text: t(mode),
+              }),
+            )}
+          />
+          <p className="pd-muted">{t('completionHelp')}</p>
+        </>
+      )}
       <details className="pd-advanced">
         <summary>{t('advancedRules')}</summary>
         <label className="pd-field">

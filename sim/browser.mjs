@@ -330,7 +330,7 @@ try {
         ? 'In this disposable workspace, write sim-result.txt containing exactly DSH_DASHBOARD_LIVE_OK (no newline). Read it back and report evidence through dashboard_report. Do not access any other directory.'
         : 'Exercise the native task tool contract and submit deterministic evidence. No external model inference is used in this lane.',
     )
-  await form.getByLabel('执行前自动分析议题', { exact: true }).uncheck()
+  await form.getByLabel('先分析再执行（推荐）', { exact: true }).uncheck()
   await expect(
     form
       .getByRole('radiogroup', { name: '完成策略', exact: true })
@@ -349,11 +349,7 @@ try {
     .getByRole('radiogroup', { name: '优先级', exact: true })
     .getByRole('radio', { name: '高', exact: true })
     .check()
-  await expect(
-    form
-      .getByRole('radiogroup', { name: '分配到会话', exact: true })
-      .getByRole('radio', { name: '工作区队列', exact: true }),
-  ).toBeChecked()
+  await expect(form.getByLabel('执行者', { exact: true })).toHaveValue('')
   const criterion =
     runtime.lane === 'live'
       ? 'sim-result.txt contains exactly DSH_DASHBOARD_LIVE_OK with no newline'
@@ -518,6 +514,7 @@ try {
           ? 'DSH_AUTO_LIVE_OK (16 ASCII bytes, no BOM, no trailing newline or whitespace)'
           : 'DSH_AUTO_NATIVE_OK'),
     )
+  await automatic.locator('details.pd-create-advanced > summary').click()
   await automatic.getByText('高级完成规则', { exact: true }).click()
   await automatic
     .getByLabel('完成规则提示词', { exact: true })
@@ -1068,7 +1065,7 @@ try {
     await probe
       .getByLabel('验收标准（可选）', { exact: true })
       .fill('Protected fixture must not be written without explicit approval')
-    await probe.getByLabel('执行前自动分析议题', { exact: true }).uncheck()
+    await probe.getByLabel('先分析再执行（推荐）', { exact: true }).uncheck()
     await probe
       .getByRole('radiogroup', { name: '完成策略', exact: true })
       .getByRole('radio', { name: '人工验收', exact: true })
@@ -1601,7 +1598,7 @@ try {
     await liveDescription.fill(
       'The pasted input image is a solid colored square. Look at the actual image and determine whether it is red, green or blue. In this disposable workspace, write live-image.txt containing exactly the matching uppercase color name (RED, GREEN or BLUE) and no newline. Read it back and report evidence through dashboard_report. Do not access any other directory.',
     )
-    await liveForm.getByLabel('执行前自动分析议题', { exact: true }).uncheck()
+    await liveForm.getByLabel('先分析再执行（推荐）', { exact: true }).uncheck()
     await liveForm
       .getByRole('radiogroup', { name: '完成策略', exact: true })
       .getByRole('radio', { name: '人工验收', exact: true })

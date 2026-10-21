@@ -9,7 +9,7 @@ export function OptionGroup<T extends string | number>({
   className = '',
 }: {
   label: string
-  options: readonly { value: T; text: string }[]
+  options: readonly { value: T; text: string; disabled?: boolean }[]
   value: T
   change: (value: T) => void
   disabled?: boolean
@@ -29,7 +29,7 @@ export function OptionGroup<T extends string | number>({
             <input
               type="radio"
               name={name}
-              disabled={disabled}
+              disabled={disabled || option.disabled}
               checked={option.value === value}
               onChange={() => change(option.value)}
             />

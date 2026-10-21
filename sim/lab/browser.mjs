@@ -126,11 +126,20 @@ async function create(
     .getByLabel('Acceptance criteria (optional)', { exact: true })
     .fill('The isolated result is correct')
   await f
-    .getByLabel('Analyze issue before execution', { exact: true })
+    .getByLabel('Analyze before execution (recommended)', { exact: true })
     .setChecked(intake)
-  await f
-    .getByLabel('Needs manual validation', { exact: true })
-    .setChecked(manual)
+  const openAdvanced = async () => {
+    const advanced = f.locator('details.pd-create-advanced')
+    if (!(await advanced.evaluate((element) => element.open)))
+      await advanced.locator(':scope > summary').click()
+  }
+  if (manual) {
+    await openAdvanced()
+    await f
+      .getByLabel('Needs manual validation', { exact: true })
+      .setChecked(true)
+  }
+  if (dependencies.length || resourceKeys.length || checks) await openAdvanced()
   for (const dependency of dependencies) {
     const row = f
       .locator('.pd-dependency-editor label')
@@ -138,7 +147,16 @@ async function create(
     await row.locator('input[type=checkbox]').check()
   }
   for (const key of resourceKeys) {
-    await f.locator('.pd-resource-editor input').fill(key)
+    const [kind, ...rest] = key.split(':')
+    const value = rest.join(':')
+    const select = f.locator('.pd-resource-editor select')
+    if (['file', 'port', 'build', 'db', 'branch'].includes(kind)) {
+      await select.selectOption(kind)
+      await f.locator('.pd-resource-editor input').fill(value)
+    } else {
+      await select.selectOption('other')
+      await f.locator('.pd-resource-editor input').fill(key)
+    }
     await f
       .locator('.pd-resource-editor')
       .getByRole('button', { name: 'Add resource key', exact: true })
@@ -1330,14 +1348,13 @@ try {
         .getByLabel('Acceptance criteria (optional)', { exact: true })
         .fill('Chip selections persist')
       await chipForm
-        .getByLabel('Analyze issue before execution', { exact: true })
+        .getByLabel('Analyze before execution (recommended)', { exact: true })
         .uncheck()
       const workspaceChips = chipForm.getByRole('radiogroup', {
-        name: 'All workspaces',
+        name: 'Workspace',
         exact: true,
       })
-      const assigneeChips = chipForm.getByRole('radiogroup', {
-        name: 'Assigned session',
+      const assigneeSelect = chipForm.getByLabel('Executor', {
         exact: true,
       })
       await expect(
@@ -1346,27 +1363,19 @@ try {
           exact: true,
         }),
       ).toBeChecked()
-      await expect(
-        assigneeChips.getByRole('radio', {
-          name: 'Workspace queue',
-          exact: true,
-        }),
-      ).toBeChecked()
+      await expect(assigneeSelect).toHaveValue('')
       await workspaceChips
         .getByRole('radio', { name: 'Operations', exact: true })
         .check()
       await expect(
-        assigneeChips.getByRole('radio', {
-          name: 'session-alpha-reviewer',
-          exact: true,
+        assigneeSelect.locator('option', {
+          hasText: 'session-alpha-reviewer',
         }),
       ).toHaveCount(0)
       await workspaceChips
         .getByRole('radio', { name: 'Application', exact: true })
         .check()
-      await assigneeChips
-        .getByRole('radio', { name: 'session-alpha-reviewer', exact: true })
-        .check()
+      await assigneeSelect.selectOption('session-alpha-reviewer')
       await chipForm
         .getByRole('radiogroup', { name: 'Priority', exact: true })
         .getByRole('radio', { name: 'High', exact: true })
@@ -1378,6 +1387,7 @@ try {
           exact: true,
         })
         .check()
+      await chipForm.locator('details.pd-create-advanced > summary').click()
       await chipForm
         .getByText('Advanced completion rules', { exact: true })
         .click()
@@ -1396,7 +1406,7 @@ try {
         .fill('chip-result')
       await noPageOverflow()
       await chipForm
-        .getByRole('radiogroup', { name: 'All workspaces', exact: true })
+        .getByRole('radiogroup', { name: 'Workspace', exact: true })
         .scrollIntoViewIfNeeded()
       await page.screenshot({
         path: path.join(run, 'ui-create-chips-light.png'),
@@ -1491,7 +1501,7 @@ try {
       })
       await page
         .locator('form.pd-create')
-        .getByRole('radiogroup', { name: 'Assigned session', exact: true })
+        .getByLabel('Executor', { exact: true })
         .scrollIntoViewIfNeeded()
       await page.screenshot({
         path: path.join(run, 'ui-create-chips-assignee-narrow.png'),

@@ -143,10 +143,26 @@ export function Dashboard(props: Props) {
       snapshot?.capabilities?.update !== false,
     workspaces = workspaceState.items,
     workspace = workspaces.find((w) => w.workspaceId === workspaceId)
-  const phaseSessions = new Set(
-    snapshot?.tasks
-      .flatMap((t) => [t.analysisSessionId, t.reviewSessionId])
-      .filter(Boolean),
+  // Current phase links plus every historical analysis/review Session from the
+  // audit ledger. Orphaned retry Sessions would otherwise appear as assignable
+  // execution Sessions in the create/edit pickers.
+  const phaseSessions = new Set<string>(
+    [
+      ...(snapshot?.tasks.flatMap((t) => [
+        t.analysisSessionId,
+        t.reviewSessionId,
+      ]) ?? []),
+      ...(snapshot?.ledger ?? [])
+        .filter((entry) =>
+          [
+            'analysis-start',
+            'analysis-report',
+            'review-start',
+            'review-report',
+          ].includes(entry.action),
+        )
+        .map((entry) => entry.actor),
+    ].filter((id): id is string => !!id),
   )
   const sessions = sessionState.ids
     .map((id) => sessionState.byId[id])
@@ -1754,7 +1770,18 @@ export function Dashboard(props: Props) {
             tasks={snapshot?.tasks ?? []}
             sessions={sessionState.ids
               .filter((id) => !phaseSessions.has(id))
-              .map((id) => sessionState.byId[id])}
+              .flatMap((id) => {
+                const session = sessionState.byId[id]
+                return session
+                  ? [
+                      {
+                        id: session.id,
+                        displayTitle: session.displayTitle,
+                        running: session.running,
+                      },
+                    ]
+                  : []
+              })}
             selectedWorkspace={workspaceId}
             busy={busy}
             close={closeCreate}
@@ -1924,12 +1951,53 @@ function DependencyEditor({
         },
       )
     }
+  const [query, setQuery] = useState('')
+  const selected = value.map(
+    (id) => options.find((option) => option.id === id)!,
+  )
+  const needle = query.trim().toLowerCase()
+  const visible = needle
+    ? options.filter(
+        (option) =>
+          (option.title ?? option.id).toLowerCase().includes(needle) ||
+          option.id.toLowerCase().includes(needle),
+      )
+    : options
   return (
     <fieldset className="pd-criteria-editor pd-dependency-editor">
       <legend>{t('dependencies')}</legend>
       <p className="pd-muted">{t('dependencyHelp')}</p>
-      {options.length ? (
-        options.map((option) => {
+      {selected.length > 0 && (
+        <div className="pd-card-tags">
+          {selected.map((option) => (
+            <span className="pd-badge" key={option.id}>
+              {option.title ?? option.id}
+              <button
+                type="button"
+                aria-label={`${t('removeDependency')} ${option.title}`}
+                disabled={disabled}
+                onClick={() =>
+                  change(value.filter((candidate) => candidate !== option.id))
+                }
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {options.length > 5 && (
+        <input
+          type="search"
+          aria-label={t('dependencySearch')}
+          placeholder={t('dependencySearch')}
+          value={query}
+          disabled={disabled}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      )}
+      {visible.length ? (
+        visible.map((option) => {
           const checked = value.includes(option.id)
           return (
             <label className="pd-check" key={option.id}>
@@ -1950,7 +2018,7 @@ function DependencyEditor({
                 }
               />
               <span>
-                {option.title} <code>{option.id.slice(0, 8)}</code>{' '}
+                {option.title}{' '}
                 <span className="pd-muted">
                   {t(option.status)}
                   {option.archived ? ` · ${t('dependencyArchived')}` : ''}
@@ -1960,11 +2028,22 @@ function DependencyEditor({
           )
         })
       ) : (
-        <p className="pd-muted">{t('dependencyNoCandidates')}</p>
+        <p className="pd-muted">
+          {options.length ? t('dependencyNoMatches') : t('dependencyNoCandidates')}
+        </p>
       )}
     </fieldset>
   )
 }
+type ResourceKind = 'file' | 'port' | 'build' | 'db' | 'branch' | 'other'
+const RESOURCE_KINDS: readonly ResourceKind[] = [
+  'file',
+  'port',
+  'build',
+  'db',
+  'branch',
+  'other',
+]
 function ResourceKeyEditor({
   value,
   change,
@@ -1976,12 +2055,14 @@ function ResourceKeyEditor({
   t: Injected['t']
   disabled: boolean
 }) {
-  const [draft, setDraft] = useState(''),
+  const [kind, setKind] = useState<ResourceKind>('file'),
+    [draft, setDraft] = useState(''),
     [error, setError] = useState('')
   const trimmed = draft.trim()
-  const liveProblem = trimmed ? resourceKeyProblem(trimmed) : null
+  const key =
+    kind === 'other' ? trimmed : trimmed ? `${kind}:${trimmed}` : ''
+  const liveProblem = key ? resourceKeyProblem(key) : null
   const add = () => {
-    const key = draft.trim()
     if (!key) return
     const problem = resourceKeyProblem(key)
     if (problem) {
@@ -2005,6 +2086,32 @@ function ResourceKeyEditor({
       <legend>{t('resourceKeys')}</legend>
       <p className="pd-muted">{t('resourceKeyHelp')}</p>
       <div className="pd-actions">
+        <select
+          aria-label={t('resourceKind')}
+          value={kind}
+          disabled={disabled}
+          onChange={(event) => {
+            setKind(event.target.value as ResourceKind)
+            setError('')
+          }}
+        >
+          {RESOURCE_KINDS.map((candidate) => (
+            <option key={candidate} value={candidate}>
+              {t(
+                (
+                  {
+                    file: 'resourceKindFile',
+                    port: 'resourceKindPort',
+                    build: 'resourceKindBuild',
+                    db: 'resourceKindDb',
+                    branch: 'resourceKindBranch',
+                    other: 'resourceKindOther',
+                  } as const
+                )[candidate],
+              )}
+            </option>
+          ))}
+        </select>
         <input
           aria-label={t('resourceKeys')}
           placeholder={t('resourceKeyPlaceholder')}
@@ -2045,7 +2152,9 @@ function ResourceKeyEditor({
                 type="button"
                 aria-label={`${t('removeResourceKey')} ${key}`}
                 disabled={disabled}
-                onClick={() => change(value.filter((candidate) => candidate !== key))}
+                onClick={() =>
+                  change(value.filter((candidate) => candidate !== key))
+                }
               >
                 ×
               </button>
@@ -2078,7 +2187,11 @@ function CreateForm({
     sessionIds: readonly string[]
   }[]
   tasks: readonly CoordinationTask[]
-  sessions: readonly { id: string; displayTitle: string }[]
+  sessions: readonly {
+    id: string
+    displayTitle: string
+    running?: boolean
+  }[]
   selectedWorkspace: string
   busy: boolean
   close: () => void
@@ -2174,144 +2287,220 @@ function CreateForm({
         })
       }}
     >
-      <OptionGroup
-        label={t('all')}
-        value={ws}
-        change={(id) => {
-          setWs(id)
-          setAssignee('')
-          setDependencies([])
-        }}
-        options={workspaces.map((w) => ({
-          value: w.workspaceId,
-          text: w.title,
-        }))}
-      />
-      <label className="pd-field pd-span">
-        {t('title')}
-        <input
-          required
-          data-dialog-autofocus
-          aria-label={t('title')}
-          maxLength={300}
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
+      <section className="pd-create-section">
+        <h3>{t('taskDetailsSection')}</h3>
+        <OptionGroup
+          label={t('workspace')}
+          value={ws}
+          change={(id) => {
+            setWs(id)
+            setAssignee('')
+            setDependencies([])
+          }}
+          options={workspaces.map((w) => ({
+            value: w.workspaceId,
+            text: w.title,
+          }))}
         />
-      </label>
-      <label className="pd-field pd-span">
-        {t('description')}
-        <textarea
-          aria-label={t('description')}
-          value={description}
-          maxLength={12000}
-          onPaste={
-            imageInputAvailable ? images.paste('description') : undefined
+        <label className="pd-field">
+          {t('title')}
+          <input
+            required
+            data-dialog-autofocus
+            aria-label={t('title')}
+            maxLength={300}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </label>
+        <label className="pd-field">
+          {t('description')}
+          <textarea
+            aria-label={t('description')}
+            value={description}
+            maxLength={12000}
+            onPaste={
+              imageInputAvailable ? images.paste('description') : undefined
+            }
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </label>
+        {imageInputAvailable ? (
+          <InputImageControl
+            source="description"
+            entries={images.entries}
+            setEntries={images.setEntries}
+            addFiles={images.addFiles}
+            error={images.errorFor('description')}
+            limits={limits}
+            load={inputImage}
+            t={t}
+            disabled={busy}
+            fieldLabel={t('description')}
+          />
+        ) : (
+          <p className="pd-muted">{t('imageInputUnavailable')}</p>
+        )}
+        <label className="pd-field">
+          {t(intake ? 'criteriaOptional' : 'criteria')}
+          <textarea
+            required={!intake}
+            aria-label={t(intake ? 'criteriaOptional' : 'criteria')}
+            value={criteria}
+            onPaste={imageInputAvailable ? images.paste('criteria') : undefined}
+            onChange={(e) => setCriteria(e.target.value)}
+          />
+        </label>
+        {imageInputAvailable ? (
+          <InputImageControl
+            source="criteria"
+            entries={images.entries}
+            setEntries={images.setEntries}
+            addFiles={images.addFiles}
+            error={images.errorFor('criteria')}
+            limits={limits}
+            load={inputImage}
+            t={t}
+            disabled={busy}
+            fieldLabel={t(intake ? 'criteriaOptional' : 'criteria')}
+          />
+        ) : null}
+        <p className="pd-muted">{t('noCriteria')}</p>
+      </section>
+
+      <section className="pd-create-section">
+        <h3>{t('executionSection')}</h3>
+        <OptionGroup
+          label={t('priority')}
+          value={priority}
+          change={setPriority}
+          options={(['low', 'normal', 'high'] as const).map((p, i) => ({
+            value: i,
+            text: t(p),
+          }))}
+        />
+        <label className="pd-field">
+          {t('executor')}
+          <select
+            aria-label={t('executor')}
+            value={assignee}
+            disabled={busy}
+            onChange={(event) => setAssignee(event.target.value)}
+          >
+            <option value="">{t('queue')}</option>
+            {sessions
+              .filter((session) =>
+                workspaces
+                  .find((w) => w.workspaceId === ws)
+                  ?.sessionIds.includes(session.id),
+              )
+              .map((session) => (
+                <option
+                  key={session.id}
+                  value={session.id}
+                  disabled={!!session.running}
+                >
+                  {session.running
+                    ? `${session.displayTitle} · ${t('sessionBusy')}`
+                    : session.displayTitle}
+                </option>
+              ))}
+          </select>
+        </label>
+        <p className="pd-muted">{t('assigneeHelp')}</p>
+        <label className="pd-check">
+          <input
+            type="checkbox"
+            checked={intake}
+            onChange={(e) => setIntake(e.target.checked)}
+          />
+          {t('intake')}
+        </label>
+        <p className="pd-muted">{t('intakeHelp')}</p>
+        {!intake && !criteria.trim() && (
+          <p role="alert" className="pd-muted">
+            {t('criteriaRequired')}
+          </p>
+        )}
+        <OptionGroup
+          label={t('completionMode')}
+          value={completionPolicy.mode}
+          change={(mode) =>
+            setCompletionPolicy({ ...completionPolicy, mode })
           }
-          onChange={(e) => setDescription(e.target.value)}
+          options={(['manual', 'verified', 'reviewed'] as const).map((mode) => ({
+            value: mode,
+            text: t(mode),
+          }))}
         />
-      </label>
-      {imageInputAvailable ? (
-        <InputImageControl
-          source="description"
-          entries={images.entries}
-          setEntries={images.setEntries}
-          addFiles={images.addFiles}
-          error={images.errorFor('description')}
-          limits={limits}
-          load={inputImage}
+        <p className="pd-muted">{t('completionHelp')}</p>
+      </section>
+
+      <details className="pd-create-advanced">
+        <summary>
+          {t('advancedSettings')}{' '}
+          <span className="pd-create-summary">
+            {dependencies.length > 0 && (
+              <span className="pd-badge">
+                {dependencies.length} {t('dependencies')}
+              </span>
+            )}
+            {resourceKeys.length > 0 && (
+              <span className="pd-badge">
+                {resourceKeys.length} {t('resourceKeys')}
+              </span>
+            )}
+            {needsManual && (
+              <span className="pd-badge">{t('manualFlag')}</span>
+            )}
+            {completionPolicy.checks.length > 0 && (
+              <span className="pd-badge">
+                {completionPolicy.checks.length} {t('machineChecks')}
+              </span>
+            )}
+            {!dependencies.length &&
+              !resourceKeys.length &&
+              !needsManual &&
+              !completionPolicy.checks.length &&
+              !completionPolicy.instructions.trim() && (
+                <span className="pd-muted">{t('advancedNone')}</span>
+              )}
+          </span>
+        </summary>
+        <p className="pd-muted">{t('advancedHelp')}</p>
+        <DependencyEditor
+          tasks={tasks}
+          workspaceId={ws}
+          selfId={null}
+          value={dependencies}
+          change={setDependencies}
           t={t}
           disabled={busy}
-          fieldLabel={t('description')}
         />
-      ) : (
-        <p className="pd-muted pd-span">{t('imageInputUnavailable')}</p>
-      )}
-      <label className="pd-field pd-span">
-        {t(intake ? 'criteriaOptional' : 'criteria')}
-        <textarea
-          required={!intake}
-          aria-label={t(intake ? 'criteriaOptional' : 'criteria')}
-          value={criteria}
-          onPaste={imageInputAvailable ? images.paste('criteria') : undefined}
-          onChange={(e) => setCriteria(e.target.value)}
-        />
-      </label>
-      {imageInputAvailable ? (
-        <InputImageControl
-          source="criteria"
-          entries={images.entries}
-          setEntries={images.setEntries}
-          addFiles={images.addFiles}
-          error={images.errorFor('criteria')}
-          limits={limits}
-          load={inputImage}
+        <ResourceKeyEditor
+          value={resourceKeys}
+          change={setResourceKeys}
           t={t}
           disabled={busy}
-          fieldLabel={t(intake ? 'criteriaOptional' : 'criteria')}
         />
-      ) : null}
-      <DependencyEditor
-        tasks={tasks}
-        workspaceId={ws}
-        selfId={null}
-        value={dependencies}
-        change={setDependencies}
-        t={t}
-        disabled={busy}
-      />
-      <ResourceKeyEditor
-        value={resourceKeys}
-        change={setResourceKeys}
-        t={t}
-        disabled={busy}
-      />
-      <OptionGroup
-        label={t('priority')}
-        value={priority}
-        change={setPriority}
-        options={(['low', 'normal', 'high'] as const).map((p, i) => ({
-          value: i,
-          text: t(p),
-        }))}
-      />
-      <OptionGroup
-        label={t('assignee')}
-        value={assignee}
-        change={setAssignee}
-        options={[
-          { value: '', text: t('queue') },
-          ...sessions
-            .filter((s) =>
-              workspaces
-                .find((w) => w.workspaceId === ws)
-                ?.sessionIds.includes(s.id),
-            )
-            .map((s) => ({ value: s.id, text: s.displayTitle })),
-        ]}
-      />
-      <label className="pd-check">
-        <input
-          type="checkbox"
-          checked={intake}
-          onChange={(e) => setIntake(e.target.checked)}
+        <label className="pd-check">
+          <input
+            type="checkbox"
+            checked={needsManual}
+            onChange={(e) => setNeedsManual(e.target.checked)}
+          />
+          {t('manualFlag')}
+        </label>
+        <p className="pd-muted">{t('manualFlagHelp')}</p>
+        <CompletionEditor
+          value={completionPolicy}
+          change={setCompletionPolicy}
+          t={t}
+          disabled={busy}
+          showMode={false}
         />
-        {t('intake')}
-      </label>
-      <p className="pd-muted">{t('noCriteria')}</p>
-      <label className="pd-check">
-        <input
-          type="checkbox"
-          checked={needsManual}
-          onChange={(e) => setNeedsManual(e.target.checked)}
-        />
-        {t('manualFlag')}
-      </label>
-      <CompletionEditor
-        value={completionPolicy}
-        change={setCompletionPolicy}
-        t={t}
-        disabled={busy}
-      />
+      </details>
+
       <div className="pd-actions">
         <button
           className="pd-primary"
