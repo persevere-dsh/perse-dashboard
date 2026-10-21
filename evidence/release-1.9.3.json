@@ -1,0 +1,92 @@
+{
+ "version": "1.9.3",
+ "commit": "59062da4d69b56cd85e156bc182329b05e2ff037",
+ "tarball": "perse-dashboard-1.9.3.tgz",
+ "tarballSha256": "5d4127eb7500946b80a4330f2a80a32518529a648303458529db1c5e2629992e",
+ "installedVersion": "1.9.3",
+ "install": {
+  "application": "applied",
+  "stage": "enable",
+  "enabled": true,
+  "source": "file:/Users/lxl/Documents/anything/perse-dashboard/perse-dashboard-1.9.3.tgz"
+ },
+ "tests": {
+  "command": "npm run check",
+  "tests": 99,
+  "status": "passed",
+  "remotes": 13
+ },
+ "ux": [
+  "Create dialog is single-column: Task details, Execution, collapsed Advanced settings.",
+  "Dependency candidates exclude completed tasks; selected dependencies are chips with optional search.",
+  "Resource keys use a type/value builder (file, port, build, db, branch, other) and persist namespace:value.",
+  "Executor is a compact select defaulting to the workspace queue; analysis/review phase Sessions are filtered from current links and the audit ledger; busy Sessions are disabled.",
+  "Completion mode is a simple selector in Execution; instructions and machine checks remain in Advanced.",
+  "Analyze-before-execution and empty acceptance criteria are explained in plain language.",
+  "Create/cancel actions sit at the end of the form, not in a sticky footer."
+ ],
+ "lanes": {
+  "native": {
+   "runId": "20261021-095545-604288",
+   "status": "passed",
+   "assertions": 43,
+   "cleanup": true,
+   "packageSha256": "5d4127eb7500946b80a4330f2a80a32518529a648303458529db1c5e2629992e"
+  },
+  "lab": {
+   "runId": "20261021-095508-eac3c4",
+   "status": "passed",
+   "scenarios": 30,
+   "cleanup": true,
+   "browserErrors": []
+  }
+ },
+ "liveVerification": {
+  "base": "http://127.0.0.1:55354",
+  "revision": 88,
+  "tasks": [
+   {
+    "id": "0289eab0-f685-494d-9196-3b651e3c722b",
+    "status": "done",
+    "version": 14
+   },
+   {
+    "id": "60c2d41e-2da8-4f4d-a020-c069f3c33c07",
+    "status": "done",
+    "version": 19
+   },
+   {
+    "id": "c1443abe-ff80-46f1-bc2b-2db61584f554",
+    "status": "done",
+    "version": 15
+   },
+   {
+    "id": "98be9a78-e25b-460e-a25b-be90ae6a6a25",
+    "status": "done",
+    "version": 30
+   },
+   {
+    "id": "56d99b8d-279b-45d8-a673-dcb47bc1b7c2",
+    "status": "done",
+    "version": 10
+   }
+  ],
+  "advancedClosedByDefault": true,
+  "executorDefault": "workspace queue",
+  "executorPhaseTitles": false,
+  "executorBusyDisabled": true,
+  "dependencyCandidatesExcludeDone": true,
+  "resourceBuilderPresent": true,
+  "pageErrors": [],
+  "screenshots": [
+   "evidence/create-form-1.9.3.png",
+   "evidence/create-form-1.9.3-advanced.png"
+  ]
+ },
+ "limitations": [
+  "The board had only completed tasks at verification time, so the live dependency list correctly showed no active candidates; the done-task exclusion is also covered by a contract test.",
+  "Dependencies and resource keys remain available in the collapsed Advanced section and in task detail; one-click application of analysis coordination suggestions is not part of this release.",
+  "Native/Lab use the deterministic simulator model; no live external-model lane is claimed for 1.9.3.",
+  "The queue remains stopped after the hot reload; the five board tasks remain done."
+ ]
+}
