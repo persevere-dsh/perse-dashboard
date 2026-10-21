@@ -18,9 +18,9 @@
 npm ci
 npm run check
 npm pack
-dsh plugin --profile web add ./perse-dashboard-1.9.3.tgz
+dsh plugin --profile web add ./perse-dashboard-1.9.4.tgz
 # 本机 Desktop 未将 dsh 加入 PATH 时：
-scripts/dsh plugin --profile desktop add ./perse-dashboard-1.9.3.tgz
+scripts/dsh plugin --profile desktop add ./perse-dashboard-1.9.4.tgz
 ```
 
 重启所选实例后，从原生侧栏打开“工作看板”。必须使用打包后的 tgz 安装，不使用目录链接。此仓库不会修改 DSH 应用文件。

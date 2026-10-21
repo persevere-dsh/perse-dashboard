@@ -574,3 +574,51 @@ test('completed tasks are not offered as dependency candidates', () => {
     ['todo'],
   )
 })
+
+test('owner can apply analysis coordination suggestions without re-analysis or execution', async () => {
+  const { controller: c } = fixture()
+  const dependency = await c.create({ ...task(), intake: false })
+  const subject = await c.create({ ...task(), intake: true })
+  const analyzing = await c.beginAnalysis('c', subject.id, subject.version)
+  const triaged = await c.triage('c', {
+    requestId: crypto.randomUUID(),
+    taskId: subject.id,
+    expectedVersion: analyzing.version,
+    analysis: {
+      summary: 'Implement with a dependency',
+      plan: ['Plan'],
+      risk: 'low',
+      route: 'staged',
+      questions: [],
+      coordination: {
+        dependencies: [dependency.id],
+        resourceKeys: ['file:src/index.ts'],
+        dependencyOrder: [dependency.id],
+        resourceConflicts: [],
+        isolation: 'none',
+        mergeRisk: 'low',
+      },
+    },
+    criteria: ['Verified'],
+  })
+  assert.equal(triaged.status, 'todo')
+  const analysis = triaged.analysis
+  const applied = await c.applyCoordination({
+    requestId: crypto.randomUUID(),
+    id: triaged.id,
+    expectedVersion: triaged.version,
+  })
+  assert.deepEqual(applied.dependencies, [dependency.id])
+  assert.deepEqual(applied.resourceKeys, ['file:src/index.ts'])
+  assert.equal(applied.status, 'todo')
+  assert.deepEqual(applied.analysis, analysis)
+  assert.equal(applied.sessionId, null)
+  await assert.rejects(
+    c.applyCoordination({
+      requestId: crypto.randomUUID(),
+      id: applied.id,
+      expectedVersion: applied.version,
+    }),
+    /Clear the task dependencies/,
+  )
+})

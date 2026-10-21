@@ -1,6 +1,6 @@
 {
   "name": "perse-dashboard",
-  "version": "1.9.3",
+  "version": "1.9.4",
   "description": "Native task and session dashboard for Persevere with DSH",
   "type": "module",
   "license": "MIT",

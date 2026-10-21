@@ -187,6 +187,9 @@ export const en = {
   saveLanes: 'Save lanes',
   lanesSaved: 'Lane setting saved',
   coordination: 'Coordination suggestions',
+  applyCoordination: 'Apply analysis suggestions',
+  applyCoordinationHelp:
+    'Writes the suggested dependencies and resource keys only; keeps the current analysis and never re-executes.',
   dependencyOrder: 'Dependency order',
   resourceConflicts: 'Resource conflicts',
   isolation: 'Isolation',
@@ -577,6 +580,9 @@ export const zh: Record<Key, string> = {
   saveLanes: '保存路数',
   lanesSaved: '路数设置已保存',
   coordination: '协同建议',
+  applyCoordination: '应用分析建议',
+  applyCoordinationHelp:
+    '只写入建议的依赖与资源键，保留当前分析，不重跑执行。',
   dependencyOrder: '依赖顺序',
   resourceConflicts: '资源冲突',
   isolation: '隔离方式',

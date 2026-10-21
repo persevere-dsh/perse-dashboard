@@ -15,6 +15,7 @@ import type {
   LaneRequest,
   BoardWorkspaceSettings,
   RepairPolicyRequest,
+  TaskCommand,
 } from '../contract/types.ts'
 import { reviewPrompt } from './prompts.ts'
 import { detectTaskLanguage } from '../contract/language.ts'
@@ -1200,6 +1201,60 @@ export class BoardController {
           reviewPromptHash: null,
           reviewSessionId: null,
           automationNote: '',
+          version: old.version + 1,
+          updatedAt: this.env.now(),
+        },
+      }
+    })
+  }
+  /**
+   * Apply the analysis coordination suggestions to the owner-declared
+   * scheduling fields. This is a separate owner command: it preserves the
+   * analysis, criteria and status and never re-executes the task.
+   */
+  applyCoordination(raw: TaskCommand) {
+    return this.mutate(raw, 'human', (b) => {
+      const old = b.tasks.find((t) => t.id === raw.id)
+      if (!old || old.version !== raw.expectedVersion)
+        throw new BoardError('conflict', 'Task changed')
+      if (old.archived || !['todo', 'blocked', 'needs-info'].includes(old.status))
+        throw new BoardError(
+          'invalid-transition',
+          'Coordination suggestions can only be applied before execution',
+        )
+      const coordination = old.analysis?.coordination
+      if (!coordination)
+        throw new BoardError(
+          'coordination-missing',
+          'This task has no analysis coordination suggestions',
+        )
+      if (old.dependencies.length || old.resourceKeys.length)
+        throw new BoardError(
+          'coordination-existing',
+          'Clear the task dependencies and resource keys before applying suggestions',
+        )
+      if (!coordination.dependencies.length && !coordination.resourceKeys.length)
+        throw new BoardError(
+          'coordination-empty',
+          'The analysis has no dependencies or resource keys to apply',
+        )
+      const dependencyProblem = dependenciesProblem(
+        old.id,
+        coordination.dependencies,
+        b.tasks,
+        old.workspaceId,
+      )
+      if (dependencyProblem)
+        throw new BoardError(dependencyProblem.code, dependencyProblem.message)
+      const resourceProblem = resourceKeysProblem(coordination.resourceKeys)
+      if (resourceProblem)
+        throw new BoardError(resourceProblem.code, resourceProblem.message)
+      return {
+        action: 'apply-coordination',
+        task: {
+          ...old,
+          dependencies: [...coordination.dependencies],
+          resourceKeys: [...coordination.resourceKeys],
           version: old.version + 1,
           updatedAt: this.env.now(),
         },

@@ -586,6 +586,13 @@ export class DashboardService extends TypertRemoteService {
     })
   }
   @Remote
+  async applyCoordination(request: TaskCommand): Promise<Task> {
+    return this.protect(async () => {
+      const command = taskCommandSchema.parse(request)
+      return this.board.applyCoordination(command)
+    })
+  }
+  @Remote
   async image(request: { id: string; path: string }): Promise<string> {
     return this.protect(async () => {
       const task = this.board.snapshot().tasks.find((t) => t.id === request.id)

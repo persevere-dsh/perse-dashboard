@@ -69,6 +69,7 @@ export interface Injected extends PermissionControls {
   analyze(r: TaskCommand): Promise<Task>
   verify(r: TaskCommand): Promise<Task>
   repairPolicy(r: RepairPolicyRequest): Promise<Task>
+  applyCoordination(r: TaskCommand): Promise<Task>
   setAutomationLanes(
     r: LaneRequest,
   ): Promise<{ workspaceId: string; lanes: number; revision: number }>
@@ -280,6 +281,18 @@ export function Dashboard(props: Props) {
     [task.analysis?.summary, task.evidence, task.review?.evidence].some(
       (text) => typeof text === 'string' && looksLatinDominant(text),
     )
+  const canApplyCoordination = (item: Task) => {
+    const coordination = item.analysis?.coordination
+    return (
+      !!coordination &&
+      !item.archived &&
+      ['todo', 'blocked', 'needs-info'].includes(item.status) &&
+      !item.dependencies.length &&
+      !item.resourceKeys.length &&
+      (coordination.dependencies.length > 0 ||
+        coordination.resourceKeys.length > 0)
+    )
+  }
   const linkedRunning =
     !!task &&
     [task.sessionId, task.analysisSessionId, task.reviewSessionId].some(
@@ -1558,6 +1571,30 @@ export function Dashboard(props: Props) {
                         )}
                       </dd>
                     </dl>
+                    {canApplyCoordination(task) && (
+                      <div className="pd-actions">
+                        <button
+                          className="pd-primary"
+                          disabled={
+                            busy || linkedRunning || !commandsAvailable
+                          }
+                          onClick={() => {
+                            void act(() =>
+                              props.applyCoordination({
+                                requestId: crypto.randomUUID(),
+                                id: task.id,
+                                expectedVersion: task.version,
+                              }),
+                            )
+                          }}
+                        >
+                          {t('applyCoordination')}
+                        </button>
+                        <span className="pd-muted">
+                          {t('applyCoordinationHelp')}
+                        </span>
+                      </div>
+                    )}
                   </section>
                 )}
               </section>

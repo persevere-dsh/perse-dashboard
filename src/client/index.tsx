@@ -171,6 +171,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           if (!result.ok) throw result.error
           return result.value
         },
+        applyCoordination: async (request) => {
+          const result =
+            await scope.remote.perseDashboard.applyCoordination(request)
+          if (!result.ok) throw result.error
+          return result.value
+        },
         openSession: (id) => scope.uiWorkspace.openSession(id as never),
         handoff: (workspaceId, id) =>
           scope.uiWorkspace.startSession(workspaceId as never, {

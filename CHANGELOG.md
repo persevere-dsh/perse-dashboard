@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.4
+
+- Add the owner-only `applyCoordination` Remote: copy an analysis coordination recommendation into an unstarted task's dependencies/resource keys without clearing the analysis, changing the status or starting execution. Existing scheduling fields must be cleared first; the same workspace/cycle/key validation applies.
+- Show an "Apply analysis suggestions" action in the task-detail coordination block, with a plain-language explanation and a disabled state while a linked Agent runs.
+
 ## 1.9.3
 
 - Keep the create/cancel actions at the end of the create form instead of a sticky footer, so the footer no longer covers the execution or advanced fields at the first scroll position.
