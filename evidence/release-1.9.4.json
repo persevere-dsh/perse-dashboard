@@ -1,0 +1,75 @@
+{
+ "version": "1.9.4",
+ "commit": "5b6d40a018b8282c55b5482ddcf6e6fb8e1be656",
+ "tarball": "perse-dashboard-1.9.4.tgz",
+ "tarballSha256": "0274af20b52d98234f2a1f9fd79969e99d455752503428e334e8bcec62c81cf5",
+ "installedVersion": "1.9.4",
+ "install": {
+  "application": "applied",
+  "stage": "enable",
+  "enabled": true,
+  "source": "file:/Users/lxl/Documents/anything/perse-dashboard/perse-dashboard-1.9.4.tgz"
+ },
+ "tests": {
+  "command": "npm run check",
+  "tests": 100,
+  "status": "passed",
+  "remotes": 14
+ },
+ "feature": {
+  "remote": "perseDashboard/applyCoordination",
+  "behavior": "Copies analysis.coordination dependencies/resourceKeys into an unstarted task without clearing analysis, changing status or starting execution; rejects existing scheduling fields and applies the same workspace/cycle/key validation.",
+  "ui": "Task detail coordination block shows Apply analysis suggestions when the task is todo/blocked/needs-info, has no dependencies/resource keys, and the analysis has suggestions."
+ },
+ "lanes": {
+  "native": {
+   "runId": "20261021-102352-aaef75",
+   "status": "passed",
+   "assertions": 43,
+   "cleanup": true,
+   "packageSha256": "0274af20b52d98234f2a1f9fd79969e99d455752503428e334e8bcec62c81cf5"
+  },
+  "lab": {
+   "runId": "20261021-102313-a9359c",
+   "status": "passed",
+   "scenarios": 30,
+   "cleanup": true,
+   "browserErrors": []
+  }
+ },
+ "contractTest": "test/coordination.test.mjs: owner can apply analysis coordination suggestions without re-analysis or execution (analysis/status preserved, existing scheduling fields rejected).",
+ "liveVerification": {
+  "base": "http://127.0.0.1:62803",
+  "revision": 88,
+  "tasks": [
+   {
+    "id": "0289eab0-f685-494d-9196-3b651e3c722b",
+    "status": "done"
+   },
+   {
+    "id": "60c2d41e-2da8-4f4d-a020-c069f3c33c07",
+    "status": "done"
+   },
+   {
+    "id": "c1443abe-ff80-46f1-bc2b-2db61584f554",
+    "status": "done"
+   },
+   {
+    "id": "98be9a78-e25b-460e-a25b-be90ae6a6a25",
+    "status": "done"
+   },
+   {
+    "id": "56d99b8d-279b-45d8-a673-dcb47bc1b7c2",
+    "status": "done"
+   }
+  ],
+  "remoteSurface": 14,
+  "installedBundle": "1.9.4",
+  "pageErrors": []
+ },
+ "limitations": [
+  "The live board had only completed tasks, so no task met the Apply analysis suggestions precondition; the button was not clicked on a live task. The Host command is covered by the contract test and the client is built from the verified tree.",
+  "Native/Lab use the deterministic simulator model; no live external-model lane is claimed for 1.9.4.",
+  "The queue remains stopped; all five board tasks remain done."
+ ]
+}
