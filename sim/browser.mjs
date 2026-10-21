@@ -1735,6 +1735,119 @@ try {
   await expectFocusRing(page, DARK_BLUE, 'dark')
   await expectDetailAccent(page, DARK_BLUE, title, 'theme-detail-dark.png')
   await page.screenshot({ path: path.join(run, 'dark.png'), fullPage: true })
+
+  // End-to-end: apply analysis coordination suggestions through the real UI.
+  const coordinationPath = path.join(runtime.workspace, 'coordination-apply')
+  await fs.mkdir(coordinationPath, { recursive: true })
+  const createdCoordination = await rpc('workspace/create', {
+    request: { path: coordinationPath, title: 'Coordination apply E2E' },
+  })
+  const coordinationWs = createdCoordination.workspace.workspaceId
+  const dependencyTask = await rpc('perseDashboard/create', {
+    request: {
+      requestId: crypto.randomUUID(),
+      workspaceId: coordinationWs,
+      title: '协调依赖任务',
+      description: '协调依赖占位任务，不执行。',
+      criteria: ['占位验收标准'],
+      priority: 1,
+      assignee: null,
+      intake: false,
+      completionPolicy: { mode: 'manual', instructions: '', checks: [] },
+      language: 'zh',
+    },
+  })
+  const coordinationTitle = '应用分析建议任务'
+  let coordinationTask = await rpc('perseDashboard/create', {
+    request: {
+      requestId: crypto.randomUUID(),
+      workspaceId: coordinationWs,
+      title: coordinationTitle,
+      description: `用于端到端验证的分析建议任务，不执行。 PERSE_SUGGEST_DEP:${dependencyTask.id} PERSE_SUGGEST_RESOURCE`,
+      criteria: ['分析建议被应用到任务'],
+      priority: 1,
+      assignee: null,
+      intake: true,
+      completionPolicy: { mode: 'manual', instructions: '', checks: [] },
+      language: 'zh',
+    },
+  })
+  coordinationTask = await rpc('perseDashboard/analyze', {
+    request: {
+      requestId: crypto.randomUUID(),
+      id: coordinationTask.id,
+      expectedVersion: coordinationTask.version,
+    },
+  })
+  await until(
+    async () =>
+      (await snapshot()).tasks.find((task) => task.id === coordinationTask.id)
+        ?.status,
+    'todo',
+    60000,
+  )
+  const beforeApply = (await snapshot()).tasks.find(
+    (task) => task.id === coordinationTask.id,
+  )
+  expect(beforeApply.analysis).not.toBe(null)
+  expect(beforeApply.dependencies).toEqual([])
+  expect(beforeApply.resourceKeys).toEqual([])
+  await page.emulateMedia({
+    colorScheme: 'light',
+    reducedMotion: 'no-preference',
+  })
+  await board()
+  await page
+    .getByLabel('全部工作区', { exact: true })
+    .selectOption(coordinationWs)
+  await page
+    .locator('.pd-card')
+    .filter({ hasText: coordinationTitle })
+    .click()
+  await page
+    .getByRole('tab', { name: '分析与复核', exact: true })
+    .click()
+  await expect(
+    page.getByRole('button', { name: '应用分析建议', exact: true }),
+  ).toBeVisible()
+  await page
+    .getByRole('button', { name: '应用分析建议', exact: true })
+    .click()
+  await until(
+    async () => {
+      const task = (await snapshot()).tasks.find(
+        (candidate) => candidate.id === coordinationTask.id,
+      )
+      return task
+        ? {
+            dependencies: task.dependencies,
+            resourceKeys: task.resourceKeys,
+            status: task.status,
+            sessionId: task.sessionId,
+            version: task.version,
+          }
+        : null
+    },
+    {
+      dependencies: [dependencyTask.id],
+      resourceKeys: ['file:suggested.txt'],
+      status: 'todo',
+      sessionId: null,
+      version: beforeApply.version + 1,
+    },
+    30000,
+  )
+  const afterApply = (await snapshot()).tasks.find(
+    (task) => task.id === coordinationTask.id,
+  )
+  expect(afterApply.analysis.summary).toBe(beforeApply.analysis.summary)
+  expect(afterApply.analysis.plan).toEqual(beforeApply.analysis.plan)
+  await page.screenshot({
+    path: path.join(run, 'coordination-apply.png'),
+    fullPage: true,
+  })
+  check('analysis coordination suggestions apply without re-analysis or execution')
+
   expect(errors).toEqual([])
   check('no browser runtime errors')
   await fs.writeFile(

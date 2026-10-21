@@ -129,7 +129,21 @@ class SimulationAdapter extends LlmAdapter {
           type: 'reasoning',
           text: 'Simulation: analysis reasoning ended before reporting.',
         }
-      } else
+      } else {
+        const suggestedDependency = data.description.match(
+          /PERSE_SUGGEST_DEP:([^\s]+)/,
+        )?.[1]
+        const suggestedKeys = data.description.includes(
+          'PERSE_SUGGEST_RESOURCE',
+        )
+          ? ['file:suggested.txt']
+          : []
+        const coordinationDependencies = suggestedDependency
+          ? [suggestedDependency]
+          : (data.dependencies ?? [])
+        const coordinationKeys = suggestedKeys.length
+          ? suggestedKeys
+          : (data.resourceKeys ?? [])
         block = call('dashboard_triage', {
           taskId: data.taskId,
           expectedVersion: data.version,
@@ -153,21 +167,19 @@ class SimulationAdapter extends LlmAdapter {
             route: 'express',
             questions: [],
             coordination: {
-              dependencies: data.dependencies ?? [],
-              resourceKeys: data.resourceKeys ?? [],
-              dependencyOrder: [
-                ...(data.dependencies ?? []),
-                data.taskId,
-              ],
+              dependencies: coordinationDependencies,
+              resourceKeys: coordinationKeys,
+              dependencyOrder: [...coordinationDependencies, data.taskId],
               resourceConflicts: [],
-              isolation: (data.dependencies ?? []).length ||
-                (data.resourceKeys ?? []).length
-                ? 'workspace'
-                : 'none',
+              isolation:
+                coordinationDependencies.length || coordinationKeys.length
+                  ? 'workspace'
+                  : 'none',
               mergeRisk: 'low',
             },
           },
         })
+      }
     } else if (phase === 'review' && data) {
       if (!toolResults.length)
         block = call('bash', {

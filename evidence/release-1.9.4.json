@@ -23,9 +23,9 @@
  },
  "lanes": {
   "native": {
-   "runId": "20261021-102352-aaef75",
+   "runId": "20261021-102707-e9a56c",
    "status": "passed",
-   "assertions": 43,
+   "assertions": 44,
    "cleanup": true,
    "packageSha256": "0274af20b52d98234f2a1f9fd79969e99d455752503428e334e8bcec62c81cf5"
   },
@@ -68,8 +68,14 @@
   "pageErrors": []
  },
  "limitations": [
-  "The live board had only completed tasks, so no task met the Apply analysis suggestions precondition; the button was not clicked on a live task. The Host command is covered by the contract test and the client is built from the verified tree.",
   "Native/Lab use the deterministic simulator model; no live external-model lane is claimed for 1.9.4.",
-  "The queue remains stopped; all five board tasks remain done."
- ]
+  "The queue remains stopped; all five production board tasks remain done."
+ ],
+ "nativeE2E": {
+  "runId": "20261021-102707-e9a56c",
+  "check": "analysis coordination suggestions apply without re-analysis or execution",
+  "result": "Applied dependency and file:suggested.txt; analysis summary/plan preserved; status remained todo; sessionId stayed null; version incremented once.",
+  "screenshot": "evidence/coordination-apply-1.9.4.png",
+  "note": "Isolated DSH_HOME/profile outside the checkout, real DSH Host and installed tarball; deterministic sim model."
+ }
 }
